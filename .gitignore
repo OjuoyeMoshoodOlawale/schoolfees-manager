@@ -7,6 +7,10 @@ dist-electron/
 
 # Database files (contain real school data — never commit)
 database/
+
+# Demo DB is tracked
+!demo/
+!demo/*.db
 *.db
 *.db-shm
 *.db-wal
