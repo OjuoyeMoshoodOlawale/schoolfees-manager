@@ -91,20 +91,19 @@
 .sidebar ::-webkit-scrollbar-thumb:hover { background: #1e40af; }
 
 /* ─── Print Styles ────────────────────────────────────────────────────────── */
+/* NOTE: No @apply inside @media — causes Tailwind circular dependency */
 @media print {
-  /* Hide everything except receipt/report content */
   .sidebar, nav, .no-print,
-  button:not(.print-show),
-  .page-header .flex.gap-2 { display: none !important; }
+  button:not(.print-show) { display: none !important; }
 
   body, html { background: white !important; margin: 0; padding: 0; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
-  .print-only  { display: block !important; }
+  .print-only   { display: block !important; }
   .receipt-page { page-break-after: always; }
-  .page-break  { page-break-before: always; }
+  .page-break   { page-break-before: always; }
 
-  /* A4 receipt */
+  /* A4 */
   .receipt-content { padding: 20mm; font-size: 11pt; }
 
   /* Thermal 80mm */
@@ -119,17 +118,24 @@
     font-family: 'Courier New', monospace;
   }
 
-  /* Account statement */
   #print-statement { padding: 15mm; }
-  #print-statement .bg-slate-900 { background: #1e293b !important; color: white !important; }
 }
 
 /* ─── Image fix — always show file:// paths ───────────────────────────────── */
 img[src^="file://"] { display: block; }
 
 /* ─── Currency input ──────────────────────────────────────────────────────── */
-.currency-input { @apply form-input; font-variant-numeric: tabular-nums; }
+.currency-input {
+  width: 100%; border: 1px solid #d1d5db; border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem; font-size: 0.875rem; color: #111827;
+  background: white; font-variant-numeric: tabular-nums;
+  transition: box-shadow 0.15s;
+}
+.currency-input:focus { outline: none; box-shadow: 0 0 0 2px #3b82f6; border-color: transparent; }
 
 /* ─── Accounting ──────────────────────────────────────────────────────────── */
-.ledger-table { @apply data-table; font-size: 11px; }
-.ledger-table td, .ledger-table th { @apply py-1.5; }
+.ledger-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ledger-table thead th { background: #f9fafb; color: #4b5563; font-weight: 500; text-align: left; padding: 0.375rem 1rem; border-bottom: 1px solid #e5e7eb; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.ledger-table tbody tr { border-bottom: 1px solid #f3f4f6; }
+.ledger-table tbody tr:hover { background: #f9fafb; }
+.ledger-table tbody td { padding: 0.375rem 1rem; color: #1f2937; }
