@@ -32,6 +32,7 @@ ipcMain.handle('activation:status', () => {
 })
 
 ipcMain.handle('activation:activate', async (_, { license_key, school_name }) => {
+  try {
   const crypto = require('crypto')
   const os     = require('os')
   const db     = getDb()
@@ -167,6 +168,10 @@ ipcMain.handle('activation:activate', async (_, { license_key, school_name }) =>
     req.write(body)
     req.end()
   })
+  } catch(e) {
+    console.error('Activation handler error:', e)
+    return { ok: false, error: e.message || 'Activation failed internally' }
+  }
 })
 
 ipcMain.handle('activation:get-machine-id', () => {

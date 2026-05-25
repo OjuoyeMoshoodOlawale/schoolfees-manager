@@ -78,16 +78,9 @@ export default function ActivationScreen({ onActivated }) {
                   maxLength={19}
                   {...register('license_key', {
                     required: 'Activation key is required',
-                    pattern: { value: /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, message: 'Key must be in format XXXX-XXXX-XXXX-XXXX' }
+                    pattern: { value: /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, message: 'Key must be in format XXXX-XXXX-XXXX-XXXX' },
+                    setValueAs: v => v.trim().toUpperCase(),
                   })}
-                  onChange={e => {
-                    // Auto-insert dashes
-                    let v = e.target.value.replace(/[^A-Z0-9]/gi, '').toUpperCase()
-                    if (v.length > 4)  v = v.slice(0,4)  + '-' + v.slice(4)
-                    if (v.length > 9)  v = v.slice(0,9)  + '-' + v.slice(9)
-                    if (v.length > 14) v = v.slice(0,14) + '-' + v.slice(14)
-                    e.target.value = v.slice(0, 19)
-                  }}
                 />
               </Field>
 
