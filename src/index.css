@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  input, textarea, select { user-select: text; }
+}
+
+@layer components {
+  /* Sidebar */
+  .sidebar { @apply bg-slate-900 text-slate-300 flex flex-col h-screen w-56 flex-shrink-0; }
+  .nav-item { @apply flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer text-slate-300 hover:bg-slate-800 hover:text-white; }
+  .nav-item.active { @apply bg-blue-600 text-white; }
+  .nav-section { @apply text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 pt-4 pb-1; }
+
+  /* Cards */
+  .card { @apply bg-white border border-gray-200 rounded-xl p-5; }
+  .card-sm { @apply bg-white border border-gray-200 rounded-lg p-4; }
+
+  /* Buttons */
+  .btn { @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700; }
+  .btn-secondary { @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50; }
+  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
+  .btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+  .btn-sm { @apply px-3 py-1.5 text-xs; }
+
+  /* Form fields */
+  .form-label { @apply block text-sm font-medium text-gray-700 mb-1; }
+  .form-input { @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition; }
+  .form-select { @apply form-input; }
+  .form-error { @apply text-red-600 text-xs mt-1; }
+
+  /* Table */
+  .data-table { @apply w-full text-sm border-collapse; }
+  .data-table thead th { @apply bg-gray-50 text-gray-600 font-medium text-left px-4 py-3 border-b border-gray-200 text-xs uppercase tracking-wide; }
+  .data-table tbody tr { @apply border-b border-gray-100 hover:bg-gray-50 transition-colors; }
+  .data-table tbody td { @apply px-4 py-3 text-gray-800; }
+
+  /* Badges */
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
+  .badge-green { @apply badge bg-emerald-100 text-emerald-800; }
+  .badge-red { @apply badge bg-red-100 text-red-800; }
+  .badge-yellow { @apply badge bg-yellow-100 text-yellow-800; }
+  .badge-gray { @apply badge bg-gray-100 text-gray-700; }
+  .badge-blue { @apply badge bg-blue-100 text-blue-800; }
+
+  /* Page header */
+  .page-header { @apply flex items-center justify-between mb-6; }
+  .page-title { @apply text-xl font-semibold text-gray-900; }
+  .page-subtitle { @apply text-sm text-gray-500 mt-0.5; }
+
+  /* Metric cards */
+  .metric-card { @apply card-sm flex flex-col gap-1; }
+  .metric-value { @apply text-2xl font-semibold text-gray-900; }
+  .metric-label { @apply text-xs text-gray-500 uppercase tracking-wide; }
+
+  /* Modal */
+  .modal-overlay { @apply fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4; }
+  .modal { @apply bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto; }
+  .modal-header { @apply flex items-center justify-between px-6 py-4 border-b border-gray-200; }
+  .modal-title { @apply text-base font-semibold text-gray-900; }
+  .modal-body { @apply px-6 py-5; }
+  .modal-footer { @apply flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl; }
+
+  /* Search input */
+  .search-input { @apply form-input pl-9; }
+
+  /* Empty state */
+  .empty-state { @apply flex flex-col items-center justify-center py-16 text-center; }
+  .empty-state-icon { @apply text-gray-300 mb-3; }
+  .empty-state-title { @apply text-gray-500 font-medium; }
+  .empty-state-sub { @apply text-gray-400 text-sm mt-1; }
+}
+
+/* ─── Custom Scrollbar (sidebar + global) ────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Sidebar specific - matches slate-900 theme */
+.sidebar ::-webkit-scrollbar-thumb { background: #334155; }
+.sidebar ::-webkit-scrollbar-track { background: #0f172a; }
+.sidebar ::-webkit-scrollbar-thumb:hover { background: #1e40af; }
+
+/* ─── Print Styles ────────────────────────────────────────────────────────── */
+@media print {
+  .sidebar, .topbar, .no-print, button { display: none !important; }
+  body { background: white !important; }
+  .print-only { display: block !important; }
+  .receipt-page { page-break-after: always; }
+
+  /* Thermal 80mm */
+  .thermal-80 { width: 80mm; margin: 0 auto; font-size: 11px; }
+  .thermal-58 { width: 58mm; margin: 0 auto; font-size: 10px; }
+}
+
+/* ─── Image fix — always show file:// paths ───────────────────────────────── */
+img[src^="file://"] { display: block; }
+
+/* ─── Currency input ──────────────────────────────────────────────────────── */
+.currency-input { @apply form-input; font-variant-numeric: tabular-nums; }
+
+/* ─── Accounting ──────────────────────────────────────────────────────────── */
+.ledger-table { @apply data-table; font-size: 11px; }
+.ledger-table td, .ledger-table th { @apply py-1.5; }

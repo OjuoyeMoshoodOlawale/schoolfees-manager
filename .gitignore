@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# Database files (contain real school data — never commit)
+database/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*_before_restore_*.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Electron build
+out/
+release/
+
+# Uploaded photos (school data)
+database/photos/
+database/logo.*
