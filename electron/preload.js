@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld('api', {
   getSmsLog:          (d)    => ipcRenderer.invoke('sms:log', d),
   testSms:            (d)    => ipcRenderer.invoke('sms:test', d),
   sendEmail:          (d)    => ipcRenderer.invoke('email:send', d),
+  sendEmailReceipt:   (d)    => ipcRenderer.invoke('email:send-receipt', d),
   testEmail:          (d)    => ipcRenderer.invoke('email:test', d),
   getEmailLog:        (d)    => ipcRenderer.invoke('email:log', d),
 
@@ -134,8 +135,23 @@ contextBridge.exposeInMainWorld('api', {
   restoreLocal:       ()     => ipcRenderer.invoke('backup:restore-local'),
   reloadApp:          ()     => ipcRenderer.invoke('backup:reload-app'),
 
+  // ── Google Drive Backup
+  gdriveStatus:       ()     => ipcRenderer.invoke('gdrive:status'),
+  gdriveSaveCreds:    (d)    => ipcRenderer.invoke('gdrive:save-credentials', d),
+  gdriveConnect:      ()     => ipcRenderer.invoke('gdrive:connect'),
+  gdriveDisconnect:   ()     => ipcRenderer.invoke('gdrive:disconnect'),
+  gdriveBackup:       ()     => ipcRenderer.invoke('gdrive:backup'),
+  gdriveListBackups:  ()     => ipcRenderer.invoke('gdrive:list-backups'),
+  gdriveRestore:      (d)    => ipcRenderer.invoke('gdrive:restore', d),
+
+  // ── Auto-backup Scheduler
+  schedulerGetConfig: ()     => ipcRenderer.invoke('scheduler:get-config'),
+  schedulerSaveConfig:(d)    => ipcRenderer.invoke('scheduler:save-config', d),
+  schedulerRunNow:    ()     => ipcRenderer.invoke('scheduler:run-now'),
+
   // ── Utility
   openPath:           (p)    => ipcRenderer.invoke('shell:open-path', p),
   getAppVersion:      ()     => ipcRenderer.invoke('app:version'),
+  checkUpdate:        ()     => ipcRenderer.invoke('app:check-update'),
   getDbDir:           ()     => ipcRenderer.invoke('app:get-db-dir'),
 })

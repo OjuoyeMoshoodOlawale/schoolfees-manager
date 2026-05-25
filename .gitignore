@@ -45,3 +45,13 @@ release/
 # Uploaded photos (school data)
 database/photos/
 database/logo.*
+
+# Auto-backup files (local runtime data)
+database/auto_backups/
+database/gdrive_token.json
+database/gdrive_config.json
+database/scheduler_config.json
+
+# Build resources (icon.ico must be added manually by developer)
+build-resources/icon.ico
+build-resources/icon.png

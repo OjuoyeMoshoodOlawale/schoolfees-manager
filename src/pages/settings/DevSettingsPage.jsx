@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Shield, Database, ToggleLeft, ToggleRight, AlertTriangle, Terminal } from 'lucide-react'
+import { Shield, Database, ToggleLeft, ToggleRight, AlertTriangle, Terminal, RefreshCw, ExternalLink } from 'lucide-react'
 import { PageHeader, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -14,6 +14,8 @@ export default function DevSettingsPage() {
   const [toggling, setToggling]         = useState(false)
   const [dbDir, setDbDir]               = useState('')
   const [appVersion, setAppVersion]     = useState('')
+  const [updateInfo, setUpdateInfo]     = useState(null)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   useEffect(() => {
     // Only developer can access this page
@@ -34,8 +36,20 @@ export default function DevSettingsPage() {
     load()
   }, [isDeveloper])
 
-  const toggleAccounting = async () => {
-    setToggling(true)
+  const checkForUpdate = async () => {
+    setCheckingUpdate(true)
+    try {
+      const r = await window.api.checkUpdate()
+      if (r.ok) {
+        setUpdateInfo(r)
+        if (r.hasUpdate) toast.success(`Update available: v${r.latestVersion}`)
+        else toast.info('You are on the latest version!')
+      } else {
+        toast.error(r.error || 'Could not check for updates')
+      }
+    } catch (e) { toast.error(e.message) }
+    finally { setCheckingUpdate(false) }
+  }
     try {
       const newVal = !accounting
       await window.api.setAccounting(newVal)
@@ -147,6 +161,48 @@ export default function DevSettingsPage() {
             <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
             To replace the database, copy your .db file into the directory shown above and restart the app.
             You can also use the Backup & Restore page to restore from a backup file.
+          </div>
+        </div>
+
+        {/* Update Checker */}
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <RefreshCw size={14} className="text-blue-500" /> Software Update
+          </h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between py-1 border-b border-gray-100">
+              <span className="text-gray-500 text-sm">Current Version</span>
+              <span className="font-mono text-xs text-gray-800">v{appVersion || '1.0.0'}</span>
+            </div>
+            {updateInfo && (
+              <div className={`p-3 rounded-lg border text-sm ${updateInfo.hasUpdate ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                {updateInfo.hasUpdate ? (
+                  <>
+                    <p className="font-semibold">🎉 Update available: v{updateInfo.latestVersion}</p>
+                    {updateInfo.notes && (
+                      <p className="text-xs mt-1 text-blue-700 line-clamp-3">{updateInfo.notes.slice(0, 200)}</p>
+                    )}
+                    <a
+                      href="#"
+                      className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-blue-700 underline"
+                      onClick={e => { e.preventDefault(); window.api.openPath(updateInfo.downloadUrl) }}
+                    >
+                      <ExternalLink size={11} /> Download Update
+                    </a>
+                  </>
+                ) : (
+                  <p className="font-medium">✅ You are on the latest version (v{updateInfo.currentVersion})</p>
+                )}
+              </div>
+            )}
+            <button
+              className="btn btn-secondary btn-sm flex items-center gap-2"
+              onClick={checkForUpdate}
+              disabled={checkingUpdate}
+            >
+              <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+              {checkingUpdate ? 'Checking…' : 'Check for Updates'}
+            </button>
           </div>
         </div>
 

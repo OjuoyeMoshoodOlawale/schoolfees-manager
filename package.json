@@ -6,12 +6,18 @@
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",
-    "vite:only": "vite"
+    "build:win": "vite build && electron-builder --win --x64",
+    "build:dir": "vite build && electron-builder --dir",
+    "vite:only": "vite",
+    "pack": "electron-builder --dir"
   },
   "dependencies": {
     "date-fns": "^3.6.0",
+    "googleapis": "^172.0.0",
     "lucide-react": "^0.383.0",
+    "node-cron": "^4.2.1",
     "node-sqlite3-wasm": "^0.8.12",
+    "nodemailer": "^8.0.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.51.3",
@@ -33,38 +39,54 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.schoolfees.app",
+    "appId": "com.ojuoye.schoolfeesmanager",
     "productName": "SchoolFees Manager",
+    "copyright": "Copyright © 2025 Ojuoye Moshood Olawale",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist-electron",
+      "buildResources": "build-resources"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "!node_modules/electron",
+      "!node_modules/.cache",
+      "!**/*.map"
     ],
     "extraResources": [
       {
         "from": "database",
-        "to": "database"
+        "to": "database",
+        "filter": ["**/*", "!*.lock"]
       }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-sqlite3-wasm/**/*"
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
-      "icon": "public/icon.ico"
+      "icon": "build-resources/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "SchoolFees Manager"
-    }
+      "createStartMenuShortcut": true,
+      "shortcutName": "SchoolFees Manager",
+      "installerIcon": "build-resources/icon.ico",
+      "uninstallerIcon": "build-resources/icon.ico",
+      "installerHeaderIcon": "build-resources/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "license": "build-resources/license.txt"
+    },
+    "publish": null
   }
 }

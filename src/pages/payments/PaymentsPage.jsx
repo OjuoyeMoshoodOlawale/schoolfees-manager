@@ -4,7 +4,7 @@ import { toast } from 'react-toastify'
 import { useAuth } from '../../context/AuthContext'
 import {
   Receipt, Printer, Trash2, Download,
-  RotateCcw, AlertTriangle, X, CheckCircle2
+  RotateCcw, AlertTriangle, X, CheckCircle2, Mail
 } from 'lucide-react'
 import {
   PageHeader, DataTable, SearchInput,
@@ -16,7 +16,8 @@ const fmtD = d =>
 
 // ─── Receipt Modal ─────────────────────────────────────────────────────────────
 function ReceiptModal({ data, onClose, fmt, school }) {
-  const [mode, setMode] = useState('a4')
+  const [mode, setMode]         = useState('a4')
+  const [emailing, setEmailing] = useState(false)
   if (!data) return null
 
   const { payment, bills = [], totalBilled, totalPaid } = data
@@ -26,6 +27,16 @@ function ReceiptModal({ data, onClose, fmt, school }) {
     document.body.classList.add(`print-${mode}`)
     window.print()
     setTimeout(() => document.body.classList.remove(`print-${mode}`), 800)
+  }
+
+  const handleEmailReceipt = async () => {
+    setEmailing(true)
+    try {
+      const r = await window.api.sendEmailReceipt({ payment_id: payment.id })
+      if (r.ok) toast.success(`Receipt emailed to ${payment.parent_email || 'parent'}!`)
+      else toast.error(r.error || 'Failed to send email')
+    } catch (e) { toast.error(e.message) }
+    finally { setEmailing(false) }
   }
 
   const isReversal = payment.amount_paid < 0
@@ -53,6 +64,12 @@ function ReceiptModal({ data, onClose, fmt, school }) {
             )}
           </div>
           <div className="flex gap-2">
+            {!isReversal && (
+              <button className="btn btn-secondary btn-sm" onClick={handleEmailReceipt} disabled={emailing}
+                title={payment.parent_email ? `Email to ${payment.parent_email}` : 'No parent email on file'}>
+                <Mail size={13} /> {emailing ? 'Sending…' : 'Email'}
+              </button>
+            )}
             <button className="btn-primary btn btn-sm" onClick={handlePrint}>
               <Printer size={13} /> Print
             </button>

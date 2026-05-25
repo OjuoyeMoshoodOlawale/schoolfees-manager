@@ -31,6 +31,7 @@ setDbPath(effectiveDbPath)
 // ─── Register All Handler Modules ─────────────────────────────────────────────
 require('./handlers/settings')(dbDir)
 require('./handlers/backup')()
+require('./handlers/gdrive')()
 require('./handlers/core')()
 require('./handlers/fees')()
 require('./handlers/billing')()
@@ -39,6 +40,10 @@ require('./handlers/auth')()
 require('./handlers/activation')()
 require('./handlers/communications')()
 require('./handlers/accounting')()
+
+// ── Start auto-backup scheduler ───────────────────────────────────────────────
+const { startScheduler } = require('./lib/scheduler')
+startScheduler()
 
 // ─── Utility IPC ──────────────────────────────────────────────────────────────
 ipcMain.handle('shell:open-path', (_, p) => shell.openPath(p))
