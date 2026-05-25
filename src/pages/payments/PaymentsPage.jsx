@@ -1,80 +1,93 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { Receipt, Printer, Trash2, ArrowLeft, Download, Search } from 'lucide-react'
-import { PageHeader, DataTable, SearchInput, Confirm, Spinner, exportToExcel } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
+import {
+  Receipt, Printer, Trash2, Download,
+  RotateCcw, AlertTriangle, X, CheckCircle2
+} from 'lucide-react'
+import {
+  PageHeader, DataTable, SearchInput,
+  Confirm, Spinner, exportToExcel
+} from '../../components/ui'
 
-const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
-const fmtD = d => d ? new Date(d).toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' }) : '—'
+const fmtD = d =>
+  d ? new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
-// ── Receipt Print View ────────────────────────────────────────────────────────
-function ReceiptView({ data, onClose }) {
-  const { fmt } = useAuth()
-  const [printMode, setPrintMode] = useState('a4') // a4 | thermal80 | thermal58
+// ─── Receipt Modal ─────────────────────────────────────────────────────────────
+function ReceiptModal({ data, onClose, fmt, school }) {
+  const [mode, setMode] = useState('a4')
   if (!data) return null
-  const { payment, school, bills, totalBilled, totalPaid } = data
+
+  const { payment, bills = [], totalBilled, totalPaid } = data
   const balance = totalBilled - totalPaid
 
-  // Detect thermal width from school settings
-  const thermalWidth = school?.thermal_width || '80mm'
-
   const handlePrint = () => {
-    // Add print class based on mode
-    document.body.classList.add(`print-${printMode}`)
+    document.body.classList.add(`print-${mode}`)
     window.print()
-    setTimeout(() => document.body.classList.remove(`print-${printMode}`), 1000)
+    setTimeout(() => document.body.classList.remove(`print-${mode}`), 800)
   }
 
-  const widthClass = {
-    'a4':        'w-full max-w-lg',
-    'thermal80': 'w-80',
-    'thermal58': 'w-60',
-  }[printMode] || 'w-full max-w-lg'
+  const isReversal = payment.amount_paid < 0
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-2xl shadow-2xl ${widthClass} max-h-[90vh] overflow-y-auto`}>
-        {/* Screen-only controls */}
-        <div className="flex items-center justify-between px-4 py-3 border-b no-print bg-gray-50 rounded-t-2xl">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+
+        {/* Controls — hidden on print */}
+        <div className="no-print flex items-center justify-between px-4 py-3 bg-gray-50 border-b rounded-t-2xl">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-800 text-sm">Receipt Preview</span>
-            <select className="form-select text-xs py-1" value={printMode}
-              onChange={e => setPrintMode(e.target.value)}>
-              <option value="a4">A4 / Full page</option>
-              <option value="thermal80">Thermal 80mm</option>
-              <option value="thermal58">Thermal 58mm</option>
-            </select>
+            <span className="font-semibold text-gray-800 text-sm">
+              {isReversal ? 'Reversal Notice' : 'Receipt Preview'}
+            </span>
+            {!isReversal && (
+              <select
+                className="form-select text-xs py-1 w-36"
+                value={mode}
+                onChange={e => setMode(e.target.value)}
+              >
+                <option value="a4">A4 / Full page</option>
+                <option value="thermal80">Thermal 80mm</option>
+                <option value="thermal58">Thermal 58mm</option>
+              </select>
+            )}
           </div>
           <div className="flex gap-2">
             <button className="btn-primary btn btn-sm" onClick={handlePrint}>
               <Printer size={13} /> Print
             </button>
-            <button className="btn-secondary btn btn-sm" onClick={onClose}>Close</button>
+            <button className="btn-secondary btn btn-sm" onClick={onClose}>
+              <X size={13} />
+            </button>
           </div>
         </div>
 
-        {/* Receipt content — print-ready */}
-        <div className={`receipt-content p-5 space-y-3 ${printMode !== 'a4' ? 'text-xs' : 'text-sm'}`}
-          style={printMode !== 'a4' ? { fontFamily: 'monospace' } : {}}>
+        {/* Receipt content */}
+        <div className="receipt-content p-5 space-y-3 text-sm">
 
           {/* School header */}
           <div className="text-center pb-3 border-b-2 border-gray-800">
             {school?.logo_path && (
-              <img src={`file://${school.logo_path}`} alt="Logo"
-                className={`object-contain mx-auto mb-2 ${printMode === 'a4' ? 'w-16 h-16' : 'w-12 h-12'}`}
-                onError={e => e.target.style.display='none'} />
+              <img
+                src={`file://${school.logo_path}`}
+                alt="Logo"
+                className="w-14 h-14 object-contain mx-auto mb-1"
+                onError={e => { e.target.style.display = 'none' }}
+              />
             )}
-            <h1 className={`font-bold text-gray-900 uppercase ${printMode === 'a4' ? 'text-lg' : 'text-sm'}`}>
-              {school?.school_name || 'School Name'}
+            <h1 className="font-bold text-gray-900 uppercase text-base">
+              {school?.school_name || data.payment?.school_name || 'School Name'}
             </h1>
-            {school?.address && <p className="text-gray-500 text-xs mt-0.5">{school.address}</p>}
-            {school?.phone && <p className="text-gray-500 text-xs">Tel: {school.phone}</p>}
+            {school?.address && <p className="text-xs text-gray-500">{school.address}</p>}
+            {school?.phone   && <p className="text-xs text-gray-500">Tel: {school.phone}</p>}
             <div className="mt-2 border border-gray-800 inline-block px-4 py-0.5">
-              <p className="font-bold text-gray-900 uppercase tracking-wider text-xs">Official Fee Receipt</p>
+              <p className="font-bold uppercase tracking-wider text-xs">
+                {isReversal ? '⚠ Payment Reversal Notice' : 'Official Fee Receipt'}
+              </p>
             </div>
           </div>
 
-          {/* Meta rows */}
+          {/* Details */}
           <div className="space-y-1">
             {[
               ['Receipt No.',  payment.receipt_number],
@@ -82,24 +95,25 @@ function ReceiptView({ data, onClose }) {
               ['Student',      `${payment.last_name} ${payment.first_name}`],
               ['Reg. No.',     payment.reg_number],
               ['Class',        payment.class_name || '—'],
-              ['Term',         `${payment.session_name} — ${payment.term_name}`],
+              ['Term',         `${payment.session_name || ''} — ${payment.term_name || ''}`],
               ['Method',       payment.payment_method?.toUpperCase()],
               ...(payment.reference ? [['Reference', payment.reference]] : []),
+              ...(isReversal ? [['Reversal Reason', payment.reversal_reason || '—']] : []),
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-2 border-b border-gray-100 pb-0.5">
-                <span className="text-gray-500 flex-shrink-0">{k}:</span>
-                <span className="font-semibold text-gray-900 text-right">{v}</span>
+                <span className="text-gray-500 flex-shrink-0 text-xs">{k}:</span>
+                <span className="font-semibold text-gray-900 text-right text-xs">{v}</span>
               </div>
             ))}
           </div>
 
-          {/* Fee items */}
-          {bills.length > 0 && (
+          {/* Fee schedule */}
+          {bills.length > 0 && !isReversal && (
             <div>
-              <p className="font-semibold text-gray-600 uppercase tracking-wide text-xs mb-1 border-t border-gray-300 pt-2">
+              <p className="font-semibold text-gray-500 uppercase tracking-wide text-xs mb-1 border-t border-gray-200 pt-2">
                 Fee Schedule This Term
               </p>
-              <table className="w-full">
+              <table className="w-full text-xs">
                 <tbody>
                   {bills.map((b, i) => (
                     <tr key={i}>
@@ -116,68 +130,150 @@ function ReceiptView({ data, onClose }) {
             </div>
           )}
 
-          {/* Payment summary */}
-          <div className="border-2 border-gray-800 p-3 space-y-1">
+          {/* Payment summary box */}
+          <div className={`border-2 p-3 space-y-1 ${isReversal ? 'border-red-800 bg-red-50' : 'border-gray-800'}`}>
             <div className="flex justify-between font-bold">
-              <span>AMOUNT PAID</span>
-              <span className={printMode === 'a4' ? 'text-xl' : 'text-base'}>{fmt(payment.amount_paid)}</span>
-            </div>
-            <div className="flex justify-between text-xs border-t border-gray-400 pt-1">
-              <span className="text-gray-500">Total Paid (All)</span>
-              <span>{fmt(totalPaid)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Balance Outstanding</span>
-              <span className={`font-bold ${balance <= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {fmt(balance)}
+              <span>{isReversal ? 'AMOUNT REVERSED' : 'AMOUNT PAID'}</span>
+              <span className={`text-base ${isReversal ? 'text-red-700' : ''}`}>
+                {fmt(Math.abs(payment.amount_paid))}
               </span>
             </div>
+            {!isReversal && (
+              <>
+                <div className="flex justify-between text-xs border-t border-gray-300 pt-1">
+                  <span className="text-gray-500">Total Paid (All Receipts)</span>
+                  <span>{fmt(totalPaid)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">Balance Outstanding</span>
+                  <span className={`font-bold ${balance <= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {fmt(balance)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Bank details */}
-          {school?.account_number && (
-            <div className="text-center text-xs text-gray-600 border-t border-gray-200 pt-2">
+          {school?.account_number && !isReversal && (
+            <div className="text-center text-xs text-gray-500 border-t border-gray-200 pt-2">
               <p>Bank: <strong>{school.bank_name}</strong></p>
-              <p>Account: <strong>{school.account_number}</strong></p>
-              {school.account_name && <p>{school.account_name}</p>}
+              <p>Account: <strong>{school.account_number}</strong> — {school.account_name}</p>
             </div>
           )}
 
           {/* Footer */}
-          <div className="text-center text-xs text-gray-400 border-t border-dashed border-gray-300 pt-2">
-            <p>{school?.receipt_footer || 'Thank you for your payment.'}</p>
-            <p className="mt-1">Computer-generated · {payment.posted_by} · {payment.created_at?.slice(0,16)}</p>
-            {printMode !== 'a4' && <p className="mt-1 border-t border-dashed border-gray-300 pt-1">{'- - - - - - - - - - - - - - -'}</p>}
-          </div>
+          <p className="text-center text-xs text-gray-400 border-t border-dashed border-gray-300 pt-2">
+            {isReversal
+              ? 'This is an official reversal notice. Balance has been adjusted accordingly.'
+              : (school?.receipt_footer || 'Thank you for your payment.')}
+            <br />
+            Posted by: {payment.posted_by} · {payment.created_at?.slice(0, 16)}
+          </p>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Main Payments Page ────────────────────────────────────────────────────────
+// ─── Reversal Modal ────────────────────────────────────────────────────────────
+function ReversalModal({ payment, onClose, onConfirm, fmt }) {
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleConfirm = async () => {
+    if (!reason.trim()) { toast.error('Enter a reason for the reversal'); return }
+    setSaving(true)
+    try {
+      await onConfirm(reason)
+    } finally { setSaving(false) }
+  }
+
+  if (!payment) return null
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center gap-3 px-5 py-4 border-b">
+          <RotateCcw size={18} className="text-amber-600" />
+          <h2 className="font-semibold text-gray-900">Reverse Payment</h2>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm space-y-1">
+            <p className="font-semibold text-amber-900">
+              Receipt: {payment.receipt_number}
+            </p>
+            <p className="text-amber-800">
+              {payment.last_name} {payment.first_name} — {fmt(payment.amount_paid)}
+            </p>
+            <p className="text-xs text-amber-700 mt-1">
+              A reversal entry (REV-...) will be created. The original receipt is preserved
+              for audit. The student's outstanding balance will increase by {fmt(payment.amount_paid)}.
+            </p>
+          </div>
+          <div>
+            <label className="form-label">
+              Reason for Reversal <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              className="form-input resize-none"
+              rows={3}
+              placeholder="e.g. Posted to wrong student, duplicate entry, bank error..."
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="flex gap-3 px-5 pb-5">
+          <button className="btn-secondary btn flex-1 justify-center" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn flex-1 justify-center bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium py-2 flex items-center gap-2"
+            onClick={handleConfirm}
+            disabled={saving}
+          >
+            <RotateCcw size={14} />
+            {saving ? 'Processing…' : 'Confirm Reversal'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Payments Page ────────────────────────────────────────────────────────
 export default function PaymentsPage() {
-  const { fmt } = useAuth()
+  const { fmt }       = useAuth()
   const { receiptId } = useParams()
-  const navigate = useNavigate()
-  const [payments, setPayments]         = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [search, setSearch]             = useState('')
-  const [receiptData, setReceiptData]   = useState(null)
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const navigate      = useNavigate()
+
+  const [payments, setPayments]           = useState([])
+  const [loading, setLoading]             = useState(true)
+  const [search, setSearch]               = useState('')
+  const [school, setSchool]               = useState(null)
+  const [receiptData, setReceiptData]     = useState(null)
+  const [deleteTarget, setDeleteTarget]   = useState(null)
+  const [reverseTarget, setReverseTarget] = useState(null)
 
   const load = useCallback(async () => {
-    const data = await window.api.listPayments({})
+    const [data, s] = await Promise.all([
+      window.api.listPayments({}),
+      window.api.getSettings(),
+    ])
     setPayments(data)
+    setSchool(s)
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  // Auto-open receipt if navigated with receiptId
+  // Auto-open receipt from URL param
   useEffect(() => {
     if (receiptId) {
-      window.api.getReceiptData(Number(receiptId)).then(d => { if (d) setReceiptData(d) })
+      window.api.getReceiptData(Number(receiptId)).then(d => {
+        if (d) setReceiptData(d)
+      })
     }
   }, [receiptId])
 
@@ -188,8 +284,24 @@ export default function PaymentsPage() {
 
   const handleDelete = async () => {
     await window.api.deletePayment(deleteTarget.id)
-    toast.success('Payment deleted')
+    toast.success('Payment record deleted')
     load()
+  }
+
+  const handleReverse = async (reason) => {
+    try {
+      const result = await window.api.reversePayment({
+        payment_id:  reverseTarget.id,
+        reason,
+        reversed_by: 'admin',
+      })
+      toast.success(`Payment reversed — ${result.reversal_receipt}`)
+      setReverseTarget(null)
+      load()
+    } catch (e) {
+      toast.error(e.message || 'Reversal failed')
+      throw e
+    }
   }
 
   const handleExport = async () => {
@@ -204,6 +316,7 @@ export default function PaymentsPage() {
       'Amount (₦)':    p.amount_paid,
       'Method':        p.payment_method,
       'Reference':     p.reference || '',
+      'Reversed':      p.is_reversed ? 'Yes' : 'No',
       'Posted By':     p.posted_by,
     }))
     await exportToExcel(rows, 'payments')
@@ -213,15 +326,29 @@ export default function PaymentsPage() {
   const filtered = payments.filter(p => {
     if (!search) return true
     const q = search.toLowerCase()
-    return `${p.first_name} ${p.last_name} ${p.reg_number} ${p.receipt_number}`.toLowerCase().includes(q)
+    return `${p.first_name} ${p.last_name} ${p.reg_number} ${p.receipt_number}`
+      .toLowerCase().includes(q)
   })
 
-  const totalAmount = filtered.reduce((s, p) => s + Number(p.amount_paid), 0)
+  const netTotal = filtered
+    .reduce((s, p) => s + Number(p.amount_paid), 0)
 
   const columns = [
     {
-      key: 'receipt_number', label: 'Receipt No.', width: '140px',
-      render: v => <span className="font-mono text-xs text-gray-600 font-semibold">{v}</span>
+      key: 'receipt_number', label: 'Receipt', width: '150px',
+      render: (v, row) => (
+        <div>
+          <span className={`font-mono text-xs font-semibold ${row.amount_paid < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+            {v}
+          </span>
+          {row.is_reversed === 1 && (
+            <span className="ml-1 text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">REVERSED</span>
+          )}
+          {row.amount_paid < 0 && (
+            <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">REVERSAL</span>
+          )}
+        </div>
+      )
     },
     {
       key: 'payment_date', label: 'Date', width: '110px',
@@ -237,98 +364,145 @@ export default function PaymentsPage() {
       )
     },
     {
-      key: 'amount_paid', label: 'Amount', width: '120px',
-      render: v => <span className="font-bold text-emerald-700">{fmt(v)}</span>
+      key: 'amount_paid', label: 'Amount', width: '130px',
+      render: v => (
+        <span className={`font-bold text-base ${Number(v) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+          {Number(v) < 0 ? '−' : ''}{fmt(Math.abs(v))}
+        </span>
+      )
     },
     {
       key: 'payment_method', label: 'Method', width: '90px',
       render: v => <span className="badge-blue badge uppercase">{v}</span>
     },
     {
-      key: 'term_name', label: 'Term', width: '120px',
-      render: (v, row) => <span className="text-xs text-gray-500">{row.session_name} · {v}</span>
+      key: 'term_name', label: 'Term', width: '130px',
+      render: (v, row) => (
+        <span className="text-xs text-gray-500">{row.session_name} · {v}</span>
+      )
     },
     {
-      key: 'actions', label: '', width: '80px', sortable: false,
+      key: 'actions', label: '', width: '100px', sortable: false,
       render: (_, row) => (
         <div className="flex gap-1 justify-end">
-          <button title="View Receipt" className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
-            onClick={e => { e.stopPropagation(); openReceipt(row) }}>
-            <Receipt size={12} />
-          </button>
-          <button title="Delete" className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
-            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}>
+          {/* View receipt — not for reversal entries */}
+          {row.amount_paid >= 0 && (
+            <button
+              title="View / Print Receipt"
+              className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
+              onClick={e => { e.stopPropagation(); openReceipt(row) }}
+            >
+              <Receipt size={12} />
+            </button>
+          )}
+          {/* Reverse — only for positive, non-reversed payments */}
+          {row.amount_paid > 0 && row.is_reversed !== 1 && (
+            <button
+              title="Reverse this payment"
+              className="btn btn-sm text-amber-600 hover:bg-amber-50 border border-amber-200"
+              onClick={e => { e.stopPropagation(); setReverseTarget(row) }}
+            >
+              <RotateCcw size={12} />
+            </button>
+          )}
+          {/* Delete */}
+          <button
+            title="Delete record"
+            className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
+            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
+          >
             <Trash2 size={12} />
           </button>
         </div>
       )
-    }
+    },
   ]
 
   return (
     <div>
       <PageHeader
         title="Payment History"
-        subtitle={`${payments.length} payments recorded`}
+        subtitle={`${payments.length} records`}
         actions={
           <div className="flex gap-2">
-            <button className="btn-secondary btn btn-sm" onClick={handleExport} disabled={!filtered.length}>
+            <button
+              className="btn-secondary btn btn-sm"
+              onClick={handleExport}
+              disabled={!filtered.length}
+            >
               <Download size={14} /> Export Excel
             </button>
-            <button className="btn-primary btn" onClick={() => navigate('/payments/new')}>
+            <button
+              className="btn-primary btn"
+              onClick={() => navigate('/payments/new')}
+            >
               <Receipt size={15} /> Post Payment
             </button>
           </div>
         }
       />
 
-      {/* Stats bar */}
+      {/* Stats */}
       {payments.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-5">
           <div className="card-sm text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Total Receipts</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Receipts</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{filtered.length}</p>
           </div>
           <div className="card-sm text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Total Collected</p>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{fmt(totalAmount)}</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Net Collected</p>
+            <p className="text-2xl font-bold text-emerald-600 mt-1">{fmt(netTotal)}</p>
           </div>
           <div className="card-sm text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Avg per Receipt</p>
-            <p className="text-2xl font-bold text-blue-600 mt-1">
-              {filtered.length > 0 ? fmt(totalAmount / filtered.length) : '₦0'}
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Reversals</p>
+            <p className="text-2xl font-bold text-red-500 mt-1">
+              {filtered.filter(p => p.is_reversed === 1).length}
             </p>
           </div>
         </div>
       )}
 
-      {/* Filters */}
+      {/* Search */}
       <div className="mb-4">
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search student name, reg number, or receipt no…"
+          placeholder="Search student name, reg number, receipt no…"
           className="w-80"
         />
       </div>
 
       {/* Table */}
       <div className="card overflow-hidden p-0">
-        {loading ? <Spinner /> : (
-          <DataTable
-            columns={columns}
-            data={filtered}
-            emptyMessage="No payments found"
-            onRowClick={openReceipt}
-          />
-        )}
+        {loading
+          ? <Spinner />
+          : <DataTable
+              columns={columns}
+              data={filtered}
+              emptyMessage="No payments recorded yet"
+              onRowClick={row => row.amount_paid >= 0 && openReceipt(row)}
+            />}
       </div>
 
-      {/* Receipt modal */}
+      {/* Modals */}
       {receiptData && (
-        <ReceiptView
+        <ReceiptModal
           data={receiptData}
-          onClose={() => { setReceiptData(null); if (receiptId) navigate('/payments') }}
+          school={school}
+          fmt={fmt}
+          onClose={() => {
+            setReceiptData(null)
+            if (receiptId) navigate('/payments')
+          }}
+        />
+      )}
+
+      {reverseTarget && (
+        <ReversalModal
+          payment={reverseTarget}
+          fmt={fmt}
+          onClose={() => setReverseTarget(null)}
+          onConfirm={handleReverse}
         />
       )}
 
@@ -337,8 +511,8 @@ export default function PaymentsPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         danger
-        title="Delete Payment"
-        message={`Delete receipt ${deleteTarget?.receipt_number} (${fmt(deleteTarget?.amount_paid)}) for ${deleteTarget?.first_name} ${deleteTarget?.last_name}? This cannot be undone.`}
+        title="Delete Payment Record"
+        message={`Delete receipt ${deleteTarget?.receipt_number} (${fmt(deleteTarget?.amount_paid || 0)}) for ${deleteTarget?.first_name} ${deleteTarget?.last_name}? This cannot be undone.`}
       />
     </div>
   )

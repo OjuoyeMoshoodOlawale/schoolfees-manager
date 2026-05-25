@@ -63,6 +63,17 @@ export default function StudentBillPage() {
     load()
   }
 
+  const onRegenerateBills = async () => {
+    if (!window.confirm('This will delete all pending bills for this student and regenerate based on their current profile (gender, boarding type, entry type). Any payments must be reversed first. Continue?')) return
+    try {
+      const result = await window.api.regenerateStudentBills({ student_id: Number(id) })
+      toast.success(result.message || 'Bills regenerated successfully')
+      load()
+    } catch (e) {
+      toast.error(e.message || 'Regeneration failed')
+    }
+  }
+
   const onWaive = async (bill) => {
     await window.api.waiveBill({ bill_id: bill.id, waive: bill.status !== 'waived' })
     toast.success(bill.status === 'waived' ? 'Bill reinstated' : 'Bill waived')
@@ -146,9 +157,15 @@ export default function StudentBillPage() {
       <div className="card mb-4 overflow-hidden p-0">
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700">Fee Items</h2>
-          <button className="btn-primary btn btn-sm print:hidden" onClick={() => setShowAdjModal(true)}>
-            <Plus size={13} /> Add Adjustment
-          </button>
+          <div className="flex gap-2 print:hidden">
+            <button className="btn-secondary btn btn-sm" onClick={onRegenerateBills}
+              title="Re-generate bills based on student's current profile (boarding type, gender, entry type)">
+              ↺ Regenerate Bills
+            </button>
+            <button className="btn-primary btn btn-sm" onClick={() => setShowAdjModal(true)}>
+              <Plus size={13} /> Add Adjustment
+            </button>
+          </div>
         </div>
 
         {bills.length === 0 ? (

@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   postCarryover:      (d)    => ipcRenderer.invoke('carryover:post', d),
   deleteCarryover:    (id)   => ipcRenderer.invoke('carryover:delete', id),
   autoComputeCarryover:(d)   => ipcRenderer.invoke('carryover:auto-compute', d),
+  regenerateStudentBills:(d)  => ipcRenderer.invoke('bills:regenerate-student', d),
 
   // ── Payments
   nextReceiptNumber:  ()     => ipcRenderer.invoke('payments:next-receipt'),
@@ -74,6 +75,7 @@ contextBridge.exposeInMainWorld('api', {
   listPayments:       (f)    => ipcRenderer.invoke('payments:list', f),
   getPayment:         (id)   => ipcRenderer.invoke('payments:get', id),
   deletePayment:      (id)   => ipcRenderer.invoke('payments:delete', id),
+  reversePayment:     (d)    => ipcRenderer.invoke('payments:reverse', d),
   getReceiptData:     (id)   => ipcRenderer.invoke('payments:receipt-data', id),
   listDebtors:        (f)    => ipcRenderer.invoke('debtors:list', f),
 

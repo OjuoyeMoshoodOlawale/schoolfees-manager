@@ -120,6 +120,50 @@ ipcMain.handle('payments:receipt-data', (_, id) => {
   return { payment, school, bills, totalBilled, totalPaid: allPayments.t }
 })
 
+
+ipcMain.handle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
+  const db = getDb()
+  const payment = db.prepare('SELECT * FROM payments WHERE id=?').get([payment_id])
+  if (!payment) throw new Error('Payment not found')
+  if (payment.is_reversed) throw new Error('This payment has already been reversed')
+
+  // Only current term payments can be reversed
+  const currentTerm = db.prepare('SELECT id FROM terms WHERE is_current=1').get()
+  if (!currentTerm || payment.term_id !== currentTerm.id) {
+    throw new Error('Only payments from the current term can be reversed')
+  }
+
+  db.exec('BEGIN')
+  try {
+    // Mark original as reversed
+    db.prepare('UPDATE payments SET is_reversed=1, reversal_reason=?, reversed_by=?, reversed_at=datetime(\'now\') WHERE id=?')
+      .run([reason || 'Reversed by ' + (reversed_by || 'admin'), reversed_by || 'admin', payment_id])
+
+    // Create a reversal record (negative amount for audit trail)
+    const year = new Date().getFullYear()
+    const last = db.prepare(`SELECT receipt_number FROM payments WHERE receipt_number LIKE ? ORDER BY id DESC LIMIT 1`).get([`RCP-${year}-%`])
+    const seq  = last ? String(parseInt(last.receipt_number.split('-')[2]) + 1).padStart(4,'0') : '0001'
+    const reversal_receipt = `REV-${year}-${seq}`
+
+    db.prepare(`INSERT INTO payments
+      (student_id, term_id, receipt_number, amount_paid, payment_date, payment_method, reference, posted_by, is_reversed)
+      VALUES (?,?,?,?,date('now'),?,?,?,1)`)
+      .run([payment.student_id, payment.term_id, reversal_receipt,
+            -Math.abs(payment.amount_paid),
+            payment.payment_method,
+            'REVERSAL of ' + payment.receipt_number,
+            reversed_by || 'admin'])
+
+    db.prepare(`INSERT INTO audit_log (action, table_name, record_id, performed_by, details)
+      VALUES ('PAYMENT_REVERSED','payments',?,?,?)`)
+      .run([payment_id, reversed_by || 'admin',
+            JSON.stringify({ original_receipt: payment.receipt_number, reason, amount: payment.amount_paid })])
+
+    db.exec('COMMIT')
+    return { ok: true, reversal_receipt }
+  } catch(e) { db.exec('ROLLBACK'); throw e }
+})
+
 // ─── Phase 4: Debtors ────────────────────────────────────────────────────────
 
 ipcMain.handle('debtors:list', (_, { term_id, class_id } = {}) => {

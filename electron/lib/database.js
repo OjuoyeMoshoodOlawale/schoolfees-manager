@@ -16,8 +16,20 @@ function getDb() {
   if (!db) {
     if (!dbPath) throw new Error('DB path not set')
 
-    // Retry opening DB — on Windows dev restarts, previous process may
-    // still hold a file handle for a few hundred ms
+    // Clean up stale lock files left by crashed processes (dev restarts on Windows)
+    const lockFiles = [dbPath + '.lock', dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']
+    for (const lf of lockFiles) {
+      try {
+        if (fs.existsSync(lf)) {
+          fs.unlinkSync(lf)
+          console.log('[DB] Removed stale lock file:', lf)
+        }
+      } catch (e) {
+        console.warn('[DB] Could not remove lock file:', lf, e.message)
+      }
+    }
+
+    // Retry opening DB — on Windows, previous process may hold handle briefly
     let lastErr
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
@@ -25,20 +37,20 @@ function getDb() {
         db.exec('PRAGMA journal_mode = DELETE')
         db.exec('PRAGMA foreign_keys = ON')
         db.exec('PRAGMA synchronous = NORMAL')
-        db.exec('PRAGMA busy_timeout = 3000')
+        db.exec('PRAGMA busy_timeout = 5000')
         db.exec('PRAGMA locking_mode = NORMAL')
         initSchema()
+        migrateSchema()
         seedDefaults()
-        break  // success
+        break
       } catch (e) {
         lastErr = e
         db = null
-        // Wait 200ms before retry
-        const end = Date.now() + 200
+        const end = Date.now() + 300
         while (Date.now() < end) {}
       }
     }
-    if (!db) throw new Error('Cannot open database after 10 attempts: ' + (lastErr?.message || 'unknown'))
+    if (!db) throw new Error('Cannot open database: ' + (lastErr?.message || 'unknown error') + '. Close any other instances of the app and try again.')
   }
   return db
 }
@@ -266,6 +278,10 @@ function initSchema() {
       posted_by TEXT DEFAULT 'admin',
       sms_sent INTEGER DEFAULT 0,
       email_sent INTEGER DEFAULT 0,
+      is_reversed INTEGER DEFAULT 0,
+      reversal_reason TEXT DEFAULT '',
+      reversed_by TEXT DEFAULT '',
+      reversed_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -367,6 +383,19 @@ function initSchema() {
 }
 
 // ─── Seed default data (INSERT OR IGNORE — safe to run multiple times) ────────
+function migrateSchema() {
+  // Add columns that may not exist in older databases
+  const migrations = [
+    "ALTER TABLE payments ADD COLUMN is_reversed INTEGER DEFAULT 0",
+    "ALTER TABLE payments ADD COLUMN reversal_reason TEXT DEFAULT ''",
+    "ALTER TABLE payments ADD COLUMN reversed_by TEXT DEFAULT ''",
+    "ALTER TABLE payments ADD COLUMN reversed_at TEXT",
+  ]
+  for (const sql of migrations) {
+    try { db.exec(sql) } catch {} // ignore if column already exists
+  }
+}
+
 function seedDefaults() {
   const insertClass   = db.prepare('INSERT OR IGNORE INTO classes (name, level) VALUES (?,?)')
   const insertFee     = db.prepare('INSERT OR IGNORE INTO fee_items (name, description) VALUES (?,?)')

@@ -315,4 +315,49 @@ ipcMain.handle('carryover:auto-compute', (_, { from_term_id, to_term_id }) => {
 })
 
 
+// Regenerate bills for a single student (when their profile changes)
+// Deletes existing pending bills for current term and regenerates
+ipcMain.handle('bills:regenerate-student', (_, { student_id, term_id }) => {
+  const db = getDb()
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid) throw new Error('No current term set')
+
+  // Check student has no payments in this term (cannot regen if paid)
+  const paid = db.prepare('SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=? AND is_reversed=0')
+    .get([student_id, tid])?.t || 0
+  if (Number(paid) > 0) {
+    throw new Error('Cannot regenerate bills — this student already has payments posted. Reverse payments first, or use adjustments instead.')
+  }
+
+  // Get student current class
+  const status = db.prepare('SELECT * FROM student_status WHERE student_id=? AND term_id=?').get([student_id, tid])
+  if (!status) throw new Error('Student has no class assignment for the current term')
+
+  const student = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
+  if (!student) throw new Error('Student not found')
+
+  // Get configs for this class/term
+  const configs = db.prepare('SELECT * FROM bill_config WHERE class_id=? AND term_id=? AND is_active=1').all([status.class_id, tid])
+  const gMap = { M: 'male', F: 'female' }
+
+  db.exec('BEGIN')
+  try {
+    // Delete existing PENDING bill lines (waived ones stay for record)
+    db.prepare("DELETE FROM student_bills WHERE student_id=? AND term_id=? AND status='pending'").run([student_id, tid])
+
+    let generated = 0
+    for (const config of configs) {
+      const gOk = config.gender_rule === 'all' || config.gender_rule === gMap[student.gender]
+      const tOk = config.student_type_rule === 'all' || config.student_type_rule === student.entry_type
+      const bOk = config.boarding_rule === 'all' || config.boarding_rule === (student.boarding_type || 'day')
+      if (!gOk || !tOk || !bOk) continue
+      const r = db.prepare(`INSERT OR IGNORE INTO student_bills (student_id,term_id,bill_config_id,amount,is_compulsory,status) VALUES (?,?,?,?,?,'pending')`)
+        .run([student_id, tid, config.id, config.amount, config.is_compulsory])
+      if (r.changes > 0) generated++
+    }
+    db.exec('COMMIT')
+    return { ok: true, generated, message: `Bills regenerated: ${generated} fee lines based on updated profile` }
+  } catch(e) { db.exec('ROLLBACK'); throw e }
+})
+
 }
