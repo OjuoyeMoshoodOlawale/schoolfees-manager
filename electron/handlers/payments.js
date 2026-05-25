@@ -34,11 +34,29 @@ ipcMain.handle('payments:post', (_, data) => {
     VALUES (?,?,?,?,?,?,?,?)`)
     .run([student_id, term.id, receipt_number, amount_paid, payment_date, payment_method, reference, posted_by])
 
+  const paymentId = info.lastInsertRowid
+
   db.prepare(`INSERT INTO audit_log (action, table_name, record_id, details)
     VALUES ('PAYMENT_POSTED','payments',?,?)`)
-    .run([info.lastInsertRowid, JSON.stringify({ student_id, amount_paid, receipt_number })])
+    .run([paymentId, JSON.stringify({ student_id, amount_paid, receipt_number })])
 
-  return { id: info.lastInsertRowid, receipt_number }
+  // Auto SMS/Email if enabled (fire and forget - don't block payment posting)
+  try {
+    const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+    const student  = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
+    if (settings?.sms_enabled && student?.parent_phone) {
+      const msg = `Dear ${student.parent_name || 'Parent'}, payment of ${amount_paid.toLocaleString('en-NG', {style:'currency',currency:'NGN'})} received for ${student.first_name} ${student.last_name}. Receipt: ${receipt_number}. - ${settings.school_name}`
+      db.prepare(`INSERT INTO sms_log (phone, student_id, message, status) VALUES (?,?,?,'pending')`)
+        .run([student.parent_phone, student_id, msg])
+    }
+    if (settings?.email_enabled && student?.parent_email) {
+      db.prepare(`INSERT INTO email_log (email, student_id, subject, body, status) VALUES (?,?,?,?,'pending')`)
+        .run([student.parent_email, student_id, `Payment Receipt - ${receipt_number}`,
+          `Payment of ${amount_paid} received. Receipt No: ${receipt_number}`])
+    }
+  } catch(e) { /* non-critical — don't fail the payment */ }
+
+  return { id: paymentId, receipt_number }
 })
 
 ipcMain.handle('payments:list', (_, { student_id, term_id } = {}) => {

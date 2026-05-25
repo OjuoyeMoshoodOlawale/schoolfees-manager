@@ -4,16 +4,6 @@ const { getDb } = require('../lib/database')
 module.exports = function register_coreHandlers() {
 // ─── IPC Handlers ──────────────────────────────────────────────────────────
 
-ipcMain.handle('settings:pick-logo', async () => {
-  const result = await dialog.showOpenDialog({ filters: [{ name: 'Images', extensions: ['png','jpg','jpeg','gif'] }], properties: ['openFile'] })
-  if (result.canceled) return null
-  const src = result.filePaths[0]
-  const ext = path.extname(src)
-  const dest = path.join(dbDir, 'logo' + ext)
-  fs.copyFileSync(src, dest)
-  return dest
-})
-
 // Sessions
 ipcMain.handle('sessions:list', () =>
   getDb().prepare('SELECT * FROM sessions ORDER BY name DESC').all()

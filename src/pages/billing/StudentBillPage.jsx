@@ -8,7 +8,6 @@ import {
 } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner } from '../../components/ui'
 
-const fmt = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
 function SummaryBar({ label, value, sub, color = 'gray' }) {
   const colors = {
@@ -28,6 +27,7 @@ function SummaryBar({ label, value, sub, color = 'gray' }) {
 }
 
 export default function StudentBillPage() {
+  const { fmt } = useAuth()
   const { id } = useParams()
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)

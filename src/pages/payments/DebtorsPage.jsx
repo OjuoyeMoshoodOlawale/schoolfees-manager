@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Download, Receipt, Eye } from 'lucide-react'
 import { toast } from 'react-toastify'
@@ -8,6 +9,7 @@ const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFraction
 const fmtD = d => d ? new Date(d).toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' }) : 'Never'
 
 export default function DebtorsPage() {
+  const { fmt } = useAuth()
   const navigate = useNavigate()
   const [debtors, setDebtors]         = useState([])
   const [classes, setClasses]         = useState([])

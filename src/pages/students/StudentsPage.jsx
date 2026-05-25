@@ -200,6 +200,7 @@ export default function StudentsPage() {
       'Boarding':     s.boarding_type || '',
       'Parent':       s.parent_name,
       'Parent Phone': s.parent_phone,
+      'Parent Email': s.parent_email || '',
     }))
     await exportToExcel(rows, 'students')
     toast.success('Exported to Excel')
