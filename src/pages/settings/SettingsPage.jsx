@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer } from 'lucide-react'
+import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 
@@ -11,17 +11,24 @@ const TABS = [
   { id: 'receipt',  label: 'Receipt',      icon: Printer },
   { id: 'sms',      label: 'SMS',          icon: MessageSquare },
   { id: 'email',    label: 'Email',        icon: Mail },
-  { id: 'backup',   label: 'Backup',       icon: Bell },
+  { id: 'accounting', label: 'Accounting',   icon: Key },
+  { id: 'backup',     label: 'Backup',       icon: Bell },
 ]
 
 export default function SettingsPage() {
   const { refreshSettings, refreshCurrency } = useAuth()
-  const [tab, setTab]           = useState('school')
-  const [loading, setLoading]   = useState(true)
-  const [saving, setSaving]     = useState(false)
-  const [logoPath, setLogoPath] = useState('')
+  const [tab, setTab]               = useState('school')
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState(false)
+  const [logoPath, setLogoPath]     = useState('')
   const [currencies, setCurrencies] = useState([])
   const [smsProviders, setSmsProviders] = useState([])
+  const [testPhone, setTestPhone]   = useState('')
+  const [testEmail, setTestEmail]   = useState('')
+  const [testingSms, setTestingSms] = useState(false)
+  const [testingEmail, setTestingEmail] = useState(false)
+  const [unlockKey, setUnlockKey] = useState('')
+  const [unlocking, setUnlocking] = useState(false)
 
   const { register, handleSubmit, reset, watch, formState: { errors, isDirty } } = useForm()
 
@@ -57,6 +64,64 @@ export default function SettingsPage() {
   const pickLogo = async () => {
     const p = await window.api.pickLogo()
     if (p) setLogoPath(p)
+  }
+
+  const handleTestSms = async () => {
+    if (!testPhone.trim()) { toast.error('Enter a phone number to test'); return }
+    setTestingSms(true)
+    try {
+      const r = await window.api.testSms({ phone: testPhone })
+      if (r.ok) toast.success(`SMS sent! Ref: ${r.ref || 'ok'}`)
+      else toast.error(r.error || 'SMS failed')
+    } catch(e) { toast.error(e.message) }
+    finally { setTestingSms(false) }
+  }
+
+  const handleTestEmail = async () => {
+    if (!testEmail.trim()) { toast.error('Enter an email address to test'); return }
+    setTestingEmail(true)
+    try {
+      const r = await window.api.testEmail({ to: testEmail })
+      if (r.ok) toast.success('Test email sent! Check your inbox.')
+      else toast.error(r.error || 'Email failed')
+    } catch(e) { toast.error(e.message) }
+    finally { setTestingEmail(false) }
+  }
+
+  const handleTestPrint = () => {
+    const w = window.open('', '_blank', 'width=800,height=600')
+    const settings = watch()
+    w.document.write(`
+      <html><head><title>Test Print</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .center { text-align: center; }
+        .box { border: 2px solid #000; padding: 12px; margin: 16px 0; }
+        .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+        @media print { button { display: none; } }
+      </style></head>
+      <body>
+      <div class="center">
+        <h2 style="text-transform:uppercase">${settings.school_name || 'Your School Name'}</h2>
+        <p style="font-size:12px">${settings.address || 'School Address'}</p>
+        <div class="box" style="display:inline-block;padding:4px 16px"><b>OFFICIAL FEE RECEIPT — TEST PRINT</b></div>
+      </div>
+      <div class="box">
+        <div class="row"><span>Receipt No.</span><span>RCP-TEST-0001</span></div>
+        <div class="row"><span>Student</span><span>Ade Johnson</span></div>
+        <div class="row"><span>Class</span><span>JSS 1</span></div>
+        <div class="row"><span>Term</span><span>First Term · 2024/2025</span></div>
+        <div class="row"><span>Payment Method</span><span>Cash</span></div>
+        <div class="row"><span>Date</span><span>${new Date().toLocaleDateString('en-NG')}</span></div>
+        <div class="row" style="font-weight:bold;font-size:16px"><span>Amount Paid</span><span>₦50,000.00</span></div>
+      </div>
+      <p style="text-align:center;font-size:11px;margin-top:8px">${settings.receipt_footer || 'Thank you for your payment.'}</p>
+      <div style="text-align:center;margin-top:16px">
+        <button onclick="window.print()" style="padding:8px 24px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">Print</button>
+      </div>
+      </body></html>
+    `)
+    w.document.close()
   }
 
   if (loading) return <Spinner />
@@ -197,6 +262,15 @@ export default function SettingsPage() {
                 placeholder="e.g. Thank you for your payment. This is a computer-generated receipt."
                 {...register('receipt_footer')} />
             </Field>
+            <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Test Print</p>
+                <p className="text-xs text-gray-500">Print a sample receipt to verify layout and printer settings</p>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleTestPrint}>
+                <Printer size={13} /> Test Print
+              </button>
+            </div>
           </div>
         )}
 
@@ -224,8 +298,21 @@ export default function SettingsPage() {
               <input className="form-input" placeholder="e.g. BrightAcad" maxLength={11}
                 {...register('sms_sender_id')} />
             </Field>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-              SMS integration is ready for configuration. Provider integration will be activated once API keys are provided.
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-gray-700">Send Test SMS</p>
+              <div className="flex gap-2">
+                <input
+                  className="form-input text-sm flex-1"
+                  placeholder="+2348012345678"
+                  value={testPhone}
+                  onChange={e => setTestPhone(e.target.value)}
+                />
+                <button type="button" className="btn btn-secondary btn-sm whitespace-nowrap"
+                  onClick={handleTestSms} disabled={testingSms}>
+                  {testingSms ? 'Sending…' : 'Send Test'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">Save settings first, then send a test SMS to verify your API key.</p>
             </div>
           </div>
         )}
@@ -257,6 +344,66 @@ export default function SettingsPage() {
             <Field label="From Address">
               <input className="form-input" placeholder="fees@yourschool.edu.ng" {...register('email_from')} />
             </Field>
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-gray-700">Send Test Email</p>
+              <div className="flex gap-2">
+                <input
+                  className="form-input text-sm flex-1"
+                  placeholder="test@example.com"
+                  value={testEmail}
+                  onChange={e => setTestEmail(e.target.value)}
+                />
+                <button type="button" className="btn btn-secondary btn-sm whitespace-nowrap"
+                  onClick={handleTestEmail} disabled={testingEmail}>
+                  {testingEmail ? 'Sending…' : 'Send Test'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">Save settings first. For Gmail, use an App Password (not your main password).</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Accounting Module ── */}
+        {tab === 'accounting' && (
+          <div className="card space-y-4">
+            <h3 className="text-sm font-semibold text-gray-700">Accounting Module Unlock</h3>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 space-y-1">
+              <p className="font-semibold">Premium Feature</p>
+              <p>The double-entry accounting module (chart of accounts, journal, ledger, trial balance) requires an unlock key. Contact your SchoolFees Manager agent to obtain one.</p>
+            </div>
+            <div className="space-y-3">
+              <label className="form-label">Accounting Unlock Key</label>
+              <div className="flex gap-2">
+                <input
+                  className="form-input font-mono flex-1 tracking-widest"
+                  placeholder="ACCT-XXXX-XXXX"
+                  value={unlockKey}
+                  onChange={e => setUnlockKey(e.target.value.toUpperCase())}
+                  maxLength={14}
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary whitespace-nowrap"
+                  disabled={unlocking || !unlockKey.trim()}
+                  onClick={async () => {
+                    setUnlocking(true)
+                    try {
+                      const r = await window.api.unlockAccounting({ key: unlockKey })
+                      if (r.ok) {
+                        toast.success('Accounting module unlocked! Reload the app to see the menu.')
+                        await refreshSettings()
+                      } else {
+                        toast.error(r.error || 'Invalid key')
+                      }
+                    } catch(e) { toast.error(e.message) }
+                    finally { setUnlocking(false) }
+                  }}
+                >
+                  <Key size={14} /> {unlocking ? 'Verifying…' : 'Unlock'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">Format: ACCT-XXXX-XXXX — unique per school name</p>
+            </div>
           </div>
         )}
 

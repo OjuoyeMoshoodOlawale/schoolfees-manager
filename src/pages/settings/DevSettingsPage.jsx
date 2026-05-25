@@ -16,6 +16,8 @@ export default function DevSettingsPage() {
   const [appVersion, setAppVersion]     = useState('')
   const [updateInfo, setUpdateInfo]     = useState(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [acctKeyName, setAcctKeyName]   = useState('')
+  const [acctKey, setAcctKey]           = useState('')
 
   useEffect(() => {
     // Only developer can access this page
@@ -206,6 +208,45 @@ export default function DevSettingsPage() {
               <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
               {checkingUpdate ? 'Checking…' : 'Check for Updates'}
             </button>
+          </div>
+        </div>
+
+        {/* Accounting Key Generator */}
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Shield size={14} className="text-purple-500" /> Generate Accounting Unlock Key
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">Generate a school-specific ACCT-XXXX-XXXX key to unlock the accounting module for a client.</p>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                className="form-input text-sm flex-1"
+                placeholder="Enter exact school name (case-insensitive)"
+                value={acctKeyName}
+                onChange={e => setAcctKeyName(e.target.value)}
+              />
+              <button
+                className="btn btn-secondary btn-sm whitespace-nowrap"
+                onClick={async () => {
+                  if (!acctKeyName.trim()) return
+                  const r = await window.api.generateAccountingKey({ school_name: acctKeyName })
+                  if (r.ok) setAcctKey(r.key)
+                  else toast.error(r.error)
+                }}
+              >
+                Generate
+              </button>
+            </div>
+            {acctKey && (
+              <div className="flex items-center gap-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                <span className="font-mono font-bold text-purple-800 tracking-widest text-lg flex-1">{acctKey}</span>
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => { navigator.clipboard.writeText(acctKey); toast.success('Copied!') }}>
+                  Copy
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-gray-400">⚠️ The school must enter their name <strong>exactly</strong> as registered in Settings → School Info for this key to work.</p>
           </div>
         </div>
 

@@ -22,21 +22,13 @@ Sold as a **one-time licensed product** distributed through sales agents.
 ## 2. HOW TO WORK WITH THE REPO
 
 ```bash
-# ALWAYS start a session by cloning fresh
 git clone https://github.com/OjuoyeMoshoodOlawale/schoolfees-manager.git
 cd schoolfees-manager
-
-# Make changes, then push
-git add -A
-git commit -m "fix: description of what changed"
-git push
-```
-
-**To load demo data:**
-```bash
-mkdir -p database
-cp demo/demo.db database/schoolfees.db
+# Load demo data:
+mkdir -p database && cp demo/demo.db database/schoolfees.db
 npm run dev
+# Push changes:
+git add -A && git commit -m "fix: ..." && git push
 ```
 
 ---
@@ -48,7 +40,7 @@ npm run dev
 | Desktop shell | Electron (main process) |
 | UI framework | React 18 + Vite |
 | Styling | Tailwind CSS + custom @layer components |
-| Database | SQLite via `node-sqlite3-wasm` (no native build needed) |
+| Database | SQLite via `node-sqlite3-wasm` (NOT better-sqlite3) |
 | Forms | react-hook-form |
 | Routing | React Router v6 (HashRouter) |
 | Icons | lucide-react |
@@ -58,252 +50,134 @@ npm run dev
 | Cloud backup | googleapis (Google Drive OAuth2) |
 | Scheduler | node-cron |
 
-**Critical constraint:** `node-sqlite3-wasm` — NOT `better-sqlite3`.
-All DB calls are **synchronous** (`.get()`, `.all()`, `.run()`).
-Always pass params as arrays: `.run([param1, param2])` NOT `.run(param1, param2)`.
+**Critical:** All DB `.run()` `.get()` `.all()` calls use array params: `.run([a, b, c])`  
+**Currency:** Always `useAuth().fmt()` — never hardcode ₦  
+**Print styles:** Never use `@apply` inside `@media print` (Tailwind circular dep)
 
 ---
 
 ## 4. PROJECT STRUCTURE
 
 ```
-schoolfees-manager/
-├── electron/
-│   ├── main.js                    # Entry point — loads all handlers + starts scheduler
-│   ├── preload.js                 # window.api bridge (115+ methods)
-│   ├── lib/
-│   │   ├── database.js            # DB connection, schema, migrations, seed
-│   │   ├── defaults.js            # Editable default classes/fees/accounts
-│   │   ├── scheduler.js           # node-cron nightly auto-backup
-│   │   └── network.config.js      # Edit to point to another PC's DB
-│   └── handlers/                  # One file per domain
-│       ├── activation.js          # License keys + dev bypass
-│       ├── auth.js                # Login, users, passwords
-│       ├── settings.js            # School settings, currency, SMS/email
-│       ├── core.js                # Sessions, terms, classes, students
-│       ├── fees.js                # Fee items, bill config, copy/preview
-│       ├── billing.js             # Generate bills, adjustments, carryover
-│       ├── payments.js            # Post payments, reversal, receipts
-│       ├── accounting.js          # Accounts, journal, invoices, ledger
-│       ├── communications.js      # SMS (Termii/BulkSMS/Twilio) + email (SMTP)
-│       ├── backup.js              # Local backup/restore with reload
-│       └── gdrive.js              # Google Drive backup + scheduler IPC + update checker
-├── src/
-│   └── pages/
-│       ├── BackupPage.jsx         # Local + Google Drive + scheduler UI (all 3 in one)
-│       ├── settings/
-│       │   └── DevSettingsPage.jsx # Now includes update checker
-│       └── payments/
-│           └── PaymentsPage.jsx   # Receipt modal now has Email button
-├── build-resources/               # electron-builder assets
-│   ├── icon.ico                   # NOT in git — add manually before building
-│   ├── license.txt                # Shown in Windows installer
-│   ├── generate-icon.js           # Helper to convert PNG → ICO
-│   └── README.md                  # Build instructions
-├── demo/
-│   ├── demo.db                    # 25 students, ₦1.8M billed, ₦608K paid
-│   └── README.md
-├── seed_demo.js                   # Regenerate demo database
-├── DESIGN.dm                      # Full platform design document
-└── README.md
+electron/
+  main.js                — Entry, loads handlers, starts scheduler
+  preload.js             — window.api bridge (120+ methods)
+  lib/
+    database.js          — Schema, migrations, seed
+    scheduler.js         — node-cron nightly auto-backup
+    network.config.js    — LAN multi-PC DB path
+  handlers/
+    activation.js        — License + accounting unlock key + student import
+    auth.js              — Login, users, passwords
+    settings.js          — School settings
+    core.js              — Sessions, terms, classes, students (fixed imports + class update)
+    fees.js              — Fee items, bill config
+    billing.js           — Bills, adjustments, carryover, opening balances import
+    payments.js          — Payments, receipts, reversal + auto-journal
+    accounting.js        — Journal, ledger, trial balance, invoices
+    communications.js    — SMS (Termii/BulkSMS/Twilio) + email (nodemailer SMTP)
+    backup.js            — Local + cloud folder sync backup
+    gdrive.js            — Google Drive OAuth + scheduler IPC + update checker
+src/
+  App.jsx                — All routes (34 routes)
+  context/AuthContext.jsx — User, fmt(), canEdit, canAdmin, isViewer
+  pages/
+    BackupPage.jsx        — Local + cloud folder sync + GDrive OAuth + scheduler
+    billing/
+      StudentBillPage.jsx  — Bills + adjustments (role-guarded) + Statement button
+      FeeStatementPage.jsx — Full fee statement with school header (NEW)
+      GenerateBillsPage.jsx — Kept but removed from sidebar nav
+    students/
+      StudentsPage.jsx    — Now has View Bill button per row
+      StudentForm.jsx     — Fixed class_id loading in edit mode
+    import/
+      ImportStudentsPage.jsx
+      OpeningBalancesPage.jsx — (NEW) Import prior balances from Excel
+    settings/
+      SettingsPage.jsx    — Added Accounting tab + test SMS/email + test print
+      DevSettingsPage.jsx — Added update checker + accounting key generator
+    sessions/SessionsPage.jsx — Fixed Set Current button (was empty function)
+build-resources/         — icon.ico goes here before npm run build:win
 ```
 
 ---
 
-## 5. AUTH GATE FLOW
+## 5. ROLE SYSTEM
 
-```
-App launch
-    │
-    ├─ activation.is_active == false → ActivationScreen
-    ├─ setup_complete == '0' → SetupWizard
-    ├─ user == null → LoginScreen
-    └─ authenticated → MainApp (all routes)
-```
+| Role | Capabilities |
+|---|---|
+| developer (devmaster) | Everything + Dev Settings |
+| admin | Everything except Dev Settings |
+| bursar | Post payments, view all |
+| viewer | Read-only — cannot post, adjust, waive, or generate |
 
-**Dev mode bypass:** Activation is auto-set to unlimited in `npm run dev`.
+`useAuth()` exposes: `canEdit`, `canAdmin`, `isViewer`, `isDeveloper`, `isAdmin`
 
 ---
 
-## 6. IPC PATTERN (Critical — must follow exactly)
+## 6. ACCOUNTING MODULE
 
-```javascript
-// preload.js pattern:
-contextBridge.exposeInMainWorld('api', {
-  listStudents: (f) => ipcRenderer.invoke('students:list', f),
-})
+**Default:** Hidden. Two ways to unlock:
+1. **devmaster toggle** — Dev Settings page → accounting toggle
+2. **Accounting unlock key** — Settings → Accounting tab → enter `ACCT-XXXX-XXXX`
+   - Generate keys in Dev Settings → "Generate Accounting Unlock Key"
+   - Key is school-name-specific (HMAC-SHA256)
+   - Master key works for any school
 
-// handler pattern:
-ipcMain.handle('students:list', (_, filters) => {
-  return getDb().prepare('SELECT * FROM students').all()
-})
+**Auto-journal:** Every payment now auto-creates a journal entry (Dr bank, Cr income) if accounting is enabled. Reversals create the opposite entry.
 
-// React usage:
-const students = await window.api.listStudents({ status: 'active' })
-```
-
-**Rules:**
-- ALL `.run()` `.get()` `.all()` use array params: `.run([a, b, c])`
-- Never use `better-sqlite3` — only `node-sqlite3-wasm`
-- Handlers never throw unhandled — wrap in try/catch, return `{ ok, error }`
+**Default chart of accounts:** Seeded in database.js (1000-5060 range)
 
 ---
 
-## 7. CURRENCY FORMATTING
+## 7. BILLING LOGIC (Hybrid Architecture)
 
-**Always use `useAuth().fmt()` — never define local fmt:**
+Bills stored in `student_bills` for audit. Recalculate on:
+- Student criteria change (class, gender, boarding, entry_type)
+- Bill config change
+- Waive/reinstate
 
-```javascript
-import { useAuth } from '../../context/AuthContext'
-const { fmt } = useAuth()
-// fmt(45000) → '₦45,000.00'
+**Bill total formula:**
+```
+billTotal      = SUM(student_bills.amount WHERE status != 'waived')
+totalExpected  = billTotal + prev_balance + adjustments
+balance        = totalExpected - SUM(payments.amount_paid WHERE is_reversed=0 AND amount_paid > 0)
 ```
 
----
-
-## 8. CSS COMPONENT CLASSES
-
-```css
-.card, .card-sm                    /* white rounded cards */
-.btn, .btn-sm, .btn-primary, .btn-secondary
-.form-input, .form-select, .form-label
-.badge, .badge-blue/green/red/yellow/gray/purple
-.nav-item, .nav-item.active, .nav-section
-.data-table (thead th, tbody tr, tbody td)
-.page-title, .page-subtitle, .page-header
-@media print — no @apply inside (Tailwind circular dep)
-```
+**Single source of truth for payments:** `payments.amount_paid WHERE is_reversed=0`  
+**Never use:** `payment_items` table for balance calculations (causes mismatch)
 
 ---
 
-## 9. GOOGLE DRIVE BACKUP — Setup Guide for Schools
+## 8. KEY FIXES APPLIED (Phase 8)
 
-The Google Drive backup requires a one-time OAuth2 setup:
-
-1. Go to https://console.cloud.google.com
-2. Create a project → Enable **Google Drive API**
-3. Create **OAuth 2.0 credentials** → Desktop App type
-4. Copy Client ID + Client Secret into BackupPage → OAuth Credentials section
-5. Click **Connect Google Account** → browser opens → sign in → done
-6. All backups go into a "SchoolFees Manager Backups" folder in their Drive
-7. Last 10 backups are kept, older ones auto-deleted
-
-**Scheduler:** Nightly at 11 PM by default. Configurable in BackupPage.
-**Auto-backup location:** `database/auto_backups/auto_YYYY-MM-DD_*.db`
-
----
-
-## 10. EMAIL RECEIPTS — Setup
-
-Configure SMTP in Settings → Email tab:
-- **Gmail:** host=smtp.gmail.com, port=587, use App Password (not main password)
-- **Outlook:** host=smtp.office365.com, port=587
-- **Custom server:** any SMTP host
-
-After setup, the "Email" button appears on every payment receipt modal.
-It sends a styled HTML receipt to the student's parent_email.
+| Fix | File |
+|---|---|
+| DevSettingsPage syntax error (await in non-async) | DevSettingsPage.jsx |
+| Photo upload — missing dialog/path/fs/dbDir imports | core.js |
+| Class dropdown blank in edit mode | StudentForm.jsx + core.js:students:update |
+| students:update params bug (.run mixed array) | core.js |
+| New→returning not updating on promotion | core.js:promote + change-term |
+| Waived bills still counted in total | billing.js:student-summary |
+| Payment total mismatch (MAX hack removed) | billing.js |
+| Session Set Current button was empty function | SessionsPage.jsx |
+| Viewer role could post/adjust bills | AuthContext + PostPaymentPage + StudentBillPage |
+| Email field name mismatch (email_host vs email_smtp_host) | communications.js |
 
 ---
 
-## 11. SMS PROVIDERS — Now Live
+## 9. WHAT STILL NEEDS BUILDING
 
-All three providers are fully implemented (no more "coming soon"):
-
-| Provider | Fields needed | Notes |
-|---|---|---|
-| **Termii** | api_key, sender_id | Best for Nigeria |
-| **BulkSMS Nigeria** | api_token | Cheap local rates |
-| **Twilio** | account_sid, auth_token, from_number | International |
-
-Nigerian numbers are auto-normalized to +234 format.
+From `school-feesmgt_cont.md`:
+- [ ] Auto-recalculate bills when student profile changes (B1) — trigger from students:update
+- [ ] Adjustment reversal (soft-delete with is_reversed flag) 
+- [ ] Report PDF export / email summary to admin
+- [ ] Packaging: add `build-resources/icon.ico` then `npm run build:win`
+- [ ] Platform web apps (activation server, agent portal, admin dashboard, landing page)
 
 ---
 
-## 12. BUILDING THE .EXE
-
-```bash
-# Prerequisites:
-# 1. Add build-resources/icon.ico (see build-resources/README.md)
-# 2. Make sure you're on Windows or use a Windows CI
-
-# Build installer:
-npm run build:win
-# Output: dist-electron/SchoolFees Manager Setup 1.0.0.exe
-
-# Build unpacked (for testing, no installer):
-npm run build:dir
-# Output: dist-electron/win-unpacked/SchoolFees Manager.exe
-```
-
-**asar:** Enabled. `node-sqlite3-wasm` is unpacked from asar (required for WASM).
-**Icon:** Must be a real multi-size `.ico` file. See `build-resources/generate-icon.js`.
-
----
-
-## 13. UPDATE CHECKER
-
-Available in **Dev Settings** page (devmaster login).
-- Checks GitHub releases API for the latest tag
-- Shows version, release notes, and download link
-- Compares semver automatically
-- Works over internet; fails gracefully offline
-
-To publish an update: create a GitHub release with tag `v1.0.1`, attach the installer `.exe` as a release asset.
-
----
-
-## 14. COMPLETED FEATURES ✅
-
-**Phase 1–6** (all previously completed — see DESIGN.dm for details)
-- Sessions, terms, classes, students, promotion
-- Fee items, bill config, copy, preview
-- Billing, adjustments, carryover, waive, regenerate
-- Payments, receipts (A4 + thermal), reversal, debtors
-- Reports: dashboard, account report, class bill print
-- Auth: activation (offline HMAC), setup wizard, login, users, roles
-- Accounting module (toggle): accounts, journal, ledger, trial balance, invoices
-- Backup & restore (local), network config, Excel import, Bulk SMS page
-
-**Phase 7 — Infrastructure (just completed)**
-- ✅ Google Drive backup (OAuth2, versioned, auto-prune to 10)
-- ✅ Auto-backup scheduler (node-cron, nightly, configurable time + keep count)
-- ✅ Email receipts (nodemailer SMTP, styled HTML, sent from receipt modal)
-- ✅ SMS fully live (Termii, BulkSMS Nigeria, Twilio — all real API calls)
-- ✅ Update checker (GitHub releases API, semver compare, download link)
-- ✅ Packaging config (electron-builder, NSIS installer, asar, build-resources/)
-
----
-
-## 15. WHAT STILL NEEDS BUILDING ⬜
-
-**Desktop app remaining:**
-- [ ] icon.ico file (must be created manually — see build-resources/README.md)
-- [ ] Auto-backup toggle in nightly Drive backup (scheduler gdriveEnabled flag wired, UI done)
-- [ ] Report PDF export (generate and email monthly summary to admin)
-- [ ] SMS receipt on payment post (optional: send SMS when payment is posted)
-
-**Platform (separate web apps):**
-- [ ] Activation server (Node.js + PostgreSQL + Express)
-- [ ] Agent portal (Next.js web app)
-- [ ] Admin dashboard (Next.js web app)
-- [ ] Marketing landing page (schoolfeesmanager.com)
-
----
-
-## 16. KNOWN ISSUES & CONSTRAINTS
-
-| Issue | Status | Notes |
-|---|---|---|
-| webSecurity: false warning | ✅ Dev only | Disappears in packaged .exe |
-| DB lock on dev restart | ✅ Fixed | Auto-cleans stale lock files |
-| currency undefined on first load | ✅ Fixed | Safe fallback ₦ |
-| @apply in @media print | ✅ Fixed | Plain CSS only |
-| Google Drive needs OAuth setup | ⚠️ By design | One-time setup per school |
-| icon.ico not in repo | ⚠️ Required | Must add before building .exe |
-
----
-
-## 17. HOW TO START A NEW CLAUDE SESSION
+## 10. HOW TO START A NEW SESSION
 
 ```
 I'm continuing development of SchoolFees Manager, a desktop Electron+React app.
@@ -313,22 +187,23 @@ Token:  github_pat_11APJQCEA0KFyvyEWLk84A_MOw0TzgjSsTr3Yj0XH3cWX9vsr9fUCIll3D0HC
 
 Please:
 1. Clone the repo
-2. Read HANDOFF.md and DESIGN.dm for full context
-3. Check the last few git commits to see what was just done
+2. Read HANDOFF.md and school-feesmgt_cont.md for full context
+3. Check the last 5 git commits
 4. Then ask what I want to work on next
 ```
 
 ---
 
-## 18. LAST COMMITS (May 2026)
+## 11. LAST COMMITS
 
 ```
-[current] feat: Google Drive backup, auto-scheduler, email receipts, SMS live, update checker, .exe packaging
-12ec90e  fix: replace all local fmt() with useAuth().fmt() across 5 remaining pages
-be06228  docs: add HANDOFF.md - comprehensive new session context document
-cece937  fix: PaymentsPage useAuth crash, payment reversal, bill regeneration, DB lock cleanup
+[current] feat: settings test SMS/email/print, accounting unlock key, cloud folder sync, fee statement, opening balances, fixes
+412bbf9  feat: fee statement, view bill, opening balances import, cloud folder sync, auto-journal, duplicate validation
+764cfe0  fix: 9 critical bugs - photo, class dropdown, waive calc, payment total, session current, viewer roles
+7bcc89d  docs: update school-feesmgt_cont.md with final decisions
+3ac9209  docs: add school-feesmgt_cont.md Phase 8 analysis
 ```
 
 ---
 
-*End of HANDOFF.md — keep this file updated as development continues*
+*End of HANDOFF.md*

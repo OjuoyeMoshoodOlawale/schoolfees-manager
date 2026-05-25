@@ -295,3 +295,58 @@ ipcMain.handle('import:students', (_, { rows, class_id, session_id, term_id, ent
 
 
 }
+
+// ── Accounting unlock key ─────────────────────────────────────────────────────
+ipcMain.handle('activation:unlock-accounting', (_, { key }) => {
+  const crypto = require('crypto')
+  const db     = getDb()
+
+  if (!key || typeof key !== 'string') return { ok: false, error: 'Invalid key' }
+
+  const normalized = key.trim().toUpperCase()
+
+  // Validate format: ACCT-XXXX-XXXX
+  if (!/^ACCT-[A-F0-9]{4}-[A-F0-9]{4}$/.test(normalized)) {
+    return { ok: false, error: 'Invalid key format. Expected: ACCT-XXXX-XXXX' }
+  }
+
+  // Re-derive from school name and compare
+  const school = db.prepare('SELECT school_name FROM school_settings WHERE id=1').get()
+  const schoolName = (school?.school_name || '').toLowerCase().trim()
+
+  // Generate the expected key for this school
+  const SECRET = 'SF_ACCT_SECRET_2025_OJUOYE'
+  const hash = crypto.createHmac('sha256', SECRET)
+    .update(schoolName)
+    .digest('hex')
+  const expected = `ACCT-${hash.slice(0,4).toUpperCase()}-${hash.slice(4,8).toUpperCase()}`
+
+  // Also accept the master accounting key (works for any school)
+  const masterHash = crypto.createHmac('sha256', SECRET)
+    .update('master_accounting_unlock')
+    .digest('hex')
+  const masterKey = `ACCT-${masterHash.slice(0,4).toUpperCase()}-${masterHash.slice(4,8).toUpperCase()}`
+
+  if (normalized !== expected && normalized !== masterKey) {
+    return { ok: false, error: 'Incorrect key. Contact your SchoolFees Manager agent to obtain an accounting unlock key.' }
+  }
+
+  // Activate accounting
+  db.prepare("INSERT OR REPLACE INTO app_state (key, value) VALUES ('accounting_enabled', '1')").run([])
+  db.prepare("UPDATE school_settings SET accounting_enabled=1 WHERE id=1").run([])
+
+  return { ok: true }
+})
+
+// Helper — generate accounting key for a school name (devmaster use only)
+ipcMain.handle('activation:generate-accounting-key', (_, { school_name }) => {
+  const crypto = require('crypto')
+  const isDev  = process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged
+  if (!isDev) return { ok: false, error: 'Dev mode only' }
+
+  const SECRET = 'SF_ACCT_SECRET_2025_OJUOYE'
+  const name   = (school_name || '').toLowerCase().trim()
+  const hash   = crypto.createHmac('sha256', SECRET).update(name).digest('hex')
+  const key    = `ACCT-${hash.slice(0,4).toUpperCase()}-${hash.slice(4,8).toUpperCase()}`
+  return { ok: true, key, school_name }
+})

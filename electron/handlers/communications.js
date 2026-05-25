@@ -98,22 +98,22 @@ const SMS_PROVIDERS = {
 async function sendEmail(settings, { to, subject, html, text }) {
   const nodemailer = require('nodemailer')
 
-  if (!settings.email_host || !settings.email_user || !settings.email_pass) {
+  if (!settings.email_smtp_host || !settings.email_smtp_user || !settings.email_smtp_pass) {
     return { ok: false, error: 'SMTP not configured. Go to Settings → Email.' }
   }
 
   const transporter = nodemailer.createTransport({
-    host: settings.email_host,
-    port: parseInt(settings.email_port) || 587,
-    secure: parseInt(settings.email_port) === 465,
-    auth: { user: settings.email_user, pass: settings.email_pass },
-    tls: { rejectUnauthorized: false }, // allow self-signed certs common in Nigeria
+    host: settings.email_smtp_host,
+    port: parseInt(settings.email_smtp_port) || 587,
+    secure: parseInt(settings.email_smtp_port) === 465,
+    auth: { user: settings.email_smtp_user, pass: settings.email_smtp_pass },
+    tls: { rejectUnauthorized: false },
   })
 
   try {
     const fromName = settings.school_name || 'SchoolFees Manager'
     const info = await transporter.sendMail({
-      from: `"${fromName}" <${settings.email_user}>`,
+      from: `"${fromName}" <${settings.email_smtp_user}>`,
       to, subject,
       html: html || `<pre>${text || ''}</pre>`,
       text: text || '',
