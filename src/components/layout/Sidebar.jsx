@@ -5,7 +5,7 @@ import {
   BookOpen, Settings, CloudUpload, ListChecks, SlidersHorizontal,
   Copy, Eye, Zap, Receipt, AlertTriangle, BarChart2, History,
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
-  ChevronDown, ChevronRight, FileSpreadsheet
+  ChevronDown, ChevronRight, FileSpreadsheet, Printer
 } from 'lucide-react'
 
 const NAV_GROUPS = [

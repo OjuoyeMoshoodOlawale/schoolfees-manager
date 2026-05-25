@@ -13,7 +13,20 @@ if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
 const dbPath = path.join(dbDir, 'schoolfees.db')
 
 const { setDbPath } = require('./lib/database')
-setDbPath(dbPath)
+const netConfig = require('./lib/network.config')
+
+// Use network DB if configured, otherwise use local DB
+const effectiveDbPath = (() => {
+  if (netConfig.USE_NETWORK_DB && netConfig.SHARE_PATH) {
+    const path = require('path')
+    const networkPath = path.join(netConfig.SHARE_PATH, netConfig.DB_FILENAME)
+    console.log('[DB] Using network database:', networkPath)
+    return networkPath
+  }
+  return dbPath
+})()
+
+setDbPath(effectiveDbPath)
 
 // ─── Register All Handler Modules ─────────────────────────────────────────────
 require('./handlers/settings')(dbDir)

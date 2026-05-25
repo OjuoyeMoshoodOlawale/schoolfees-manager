@@ -12,16 +12,33 @@ function setDbPath(p) { dbPath = p }
 
 // ─── Get or open DB ───────────────────────────────────────────────────────────
 function getDb() {
-  if (isClosing) throw new Error('Database is being replaced. Please wait a moment and try again.')
+  if (isClosing) throw new Error('Database is being replaced. Please wait a moment.')
   if (!db) {
     if (!dbPath) throw new Error('DB path not set')
-    db = new Database(dbPath)
-    db.exec('PRAGMA foreign_keys = ON')
-    db.exec('PRAGMA journal_mode = DELETE')  // WAL can cause lock issues on Windows
-    db.exec('PRAGMA synchronous = NORMAL')
-    db.exec('PRAGMA busy_timeout = 5000')    // Wait up to 5s if locked
-    initSchema()
-    seedDefaults()
+
+    // Retry opening DB — on Windows dev restarts, previous process may
+    // still hold a file handle for a few hundred ms
+    let lastErr
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        db = new Database(dbPath)
+        db.exec('PRAGMA journal_mode = DELETE')
+        db.exec('PRAGMA foreign_keys = ON')
+        db.exec('PRAGMA synchronous = NORMAL')
+        db.exec('PRAGMA busy_timeout = 3000')
+        db.exec('PRAGMA locking_mode = NORMAL')
+        initSchema()
+        seedDefaults()
+        break  // success
+      } catch (e) {
+        lastErr = e
+        db = null
+        // Wait 200ms before retry
+        const end = Date.now() + 200
+        while (Date.now() < end) {}
+      }
+    }
+    if (!db) throw new Error('Cannot open database after 10 attempts: ' + (lastErr?.message || 'unknown'))
   }
   return db
 }

@@ -26,6 +26,7 @@ import CopyConfigPage     from './pages/fees/CopyConfigPage'
 import GenerateBillsPage  from './pages/billing/GenerateBillsPage'
 import StudentBillPage    from './pages/billing/StudentBillPage'
 import CarryoverPage      from './pages/billing/CarryoverPage'
+import ClassBillPrintPage from './pages/billing/ClassBillPrintPage'
 import PostPaymentPage    from './pages/payments/PostPaymentPage'
 import PaymentsPage       from './pages/payments/PaymentsPage'
 import DebtorsPage        from './pages/payments/DebtorsPage'
@@ -62,19 +63,17 @@ function AuthGate() {
     return <ActivationScreen onActivated={() => checkStatus()} />
   }
 
-  // 2. Activated but not set up — show setup wizard
+  // 2. Activated but first-time setup not done (no admin user exists)
   if (!setupDone) {
     return <SetupWizard activation={activation} onComplete={() => checkStatus()} />
   }
 
-  // 3. Set up but not logged in — show login
+  // 3. Setup done but not logged in — show login
   if (!user) {
-    return (
-      <LoginScreenWrapper onLogin={login} />
-    )
+    return <LoginScreenWrapper onLogin={login} />
   }
 
-  // 4. Logged in — show main app
+  // 4. Fully authenticated — show main app
   return <MainApp />
 }
 
@@ -114,6 +113,7 @@ function MainApp() {
         <Route path="/billing/generate"       element={<GenerateBillsPage />} />
         <Route path="/billing/student/:id"    element={<StudentBillPage />} />
         <Route path="/billing/carryover"      element={<CarryoverPage />} />
+        <Route path="/billing/class-print"    element={<ClassBillPrintPage />} />
         <Route path="/payments"               element={<PaymentsPage />} />
         <Route path="/payments/new"           element={<PostPaymentPage />} />
         <Route path="/payments/receipt/:receiptId" element={<PaymentsPage />} />
