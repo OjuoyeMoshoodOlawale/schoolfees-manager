@@ -1,3 +1,4 @@
+import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
@@ -5,9 +6,9 @@ import { toast } from 'react-toastify'
 import { Receipt, Search, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 
-const fmt = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
 export default function PostPaymentPage() {
+  const { fmt } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const preloadStudentId = searchParams.get('student')

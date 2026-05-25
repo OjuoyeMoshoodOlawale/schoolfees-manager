@@ -1,3 +1,4 @@
+import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 import { useForm } from 'react-hook-form'
@@ -5,9 +6,9 @@ import { History, Zap, Plus, Trash2, AlertCircle, CheckCircle2 } from 'lucide-re
 import { PageHeader, Spinner, Confirm, Modal, Field, DataTable, exportToExcel } from '../../components/ui'
 import { Download } from 'lucide-react'
 
-const fmt = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
 export default function CarryoverPage() {
+  const { fmt } = useAuth()
   const [sessions, setSessions]   = useState([])
   const [terms, setTerms]         = useState([])
   const [toTerms, setToTerms]     = useState([])

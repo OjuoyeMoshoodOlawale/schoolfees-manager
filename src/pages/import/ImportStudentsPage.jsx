@@ -1,3 +1,4 @@
+import { useAuth } from '../../context/AuthContext'
 import { useState, useRef } from 'react'
 import { toast } from 'react-toastify'
 import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Download, X } from 'lucide-react'
@@ -5,9 +6,9 @@ import { PageHeader, Spinner, Field } from '../../components/ui'
 import { normaliseImportRow, IMPORT_COLUMNS } from '../../lib/utils'
 import * as XLSX from 'xlsx'
 
-const fmt = n => `${Number(n||0)}`
 
 export default function ImportStudentsPage() {
+  const { fmt } = useAuth()
   const fileRef = useRef()
   const [rows, setRows]               = useState([])
   const [classes, setClasses]         = useState([])

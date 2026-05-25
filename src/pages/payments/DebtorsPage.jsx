@@ -5,7 +5,6 @@ import { AlertTriangle, Download, Receipt, Eye } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { PageHeader, DataTable, SearchInput, Spinner, exportToExcel } from '../../components/ui'
 
-const fmt  = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 const fmtD = d => d ? new Date(d).toLocaleDateString('en-NG', { day:'numeric', month:'short', year:'numeric' }) : 'Never'
 
 export default function DebtorsPage() {

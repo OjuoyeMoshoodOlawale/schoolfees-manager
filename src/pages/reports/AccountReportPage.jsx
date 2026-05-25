@@ -1,9 +1,9 @@
+import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 import { BarChart2, Download, Filter } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
 
-const fmt = n => `₦${Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
 function ReportTable({ title, columns, rows, totals }) {
   return (
@@ -41,6 +41,7 @@ function ReportTable({ title, columns, rows, totals }) {
 }
 
 export default function AccountReportPage() {
+  const { fmt } = useAuth()
   const [sessions, setSessions] = useState([])
   const [terms, setTerms]       = useState([])
   const [selSession, setSelSession] = useState('')
