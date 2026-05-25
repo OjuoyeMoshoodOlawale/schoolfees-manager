@@ -4,6 +4,20 @@ const { getDb } = require('../lib/database')
 module.exports = function register_activationHandlers() {
 // ─── Activation ───────────────────────────────────────────────────────────────
 ipcMain.handle('activation:status', () => {
+  const isDev = process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged
+
+  // DEV MODE: auto-activate with unlimited students so you can test without a key
+  if (isDev) {
+    const db = getDb()
+    const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
+    if (!existing) {
+      db.prepare(`INSERT INTO activation (id,license_key,school_name,activated_at,max_students,tier,is_active)
+        VALUES (1,'DEV-MODE','Development School',datetime('now'),9999,'unlimited',1)`).run()
+    } else {
+      db.prepare('UPDATE activation SET is_active=1, max_students=9999, tier=? WHERE id=1').run(['unlimited'])
+    }
+  }
+
   const row = getDb().prepare('SELECT * FROM activation WHERE id=1').get()
   const setupDone = getDb().prepare("SELECT value FROM app_state WHERE key='setup_complete'").get()?.value === '1'
   const userCount = getDb().prepare('SELECT COUNT(*) as c FROM users').get()?.c || 0
@@ -156,35 +170,5 @@ ipcMain.handle('import:students', (_, { rows, class_id, session_id, term_id, ent
   return { ok: true, inserted, skipped, skippedDueToLimit, errors: errors.slice(0, 20) }
 })
 
-
-// ─── Window ─────────────────────────────────────────────────────────────────
-let win
-function createWindow() {
-  win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 1024,
-    minHeight: 680,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-    titleBarStyle: 'default',
-    show: false
-  })
-
-  if (isDev) {
-    win.loadURL('http://localhost:5173')
-    win.webContents.openDevTools()
-  } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
-  }
-
-  win.once('ready-to-show', () => win.show())
-}
-
-app.whenReady().then(createWindow)
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 
 }
