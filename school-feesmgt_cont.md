@@ -9,12 +9,46 @@
 
 | Question | Decision |
 |---|---|
-| Bill architecture | **Hybrid** — store bill rows for audit, auto-recalculate on every criteria change |
-| Accounting module lock | **devmaster login only** — flip per installation via Dev Settings |
-| Reversals scope | **Payments + bill adjustments + carryover** |
-| Inactive student mid-term | **Freeze immediately** — hide from active, bills stay frozen |
-| Google Drive backup | **Both options** — keep OAuth AND add simple folder-path option |
+| Bill architecture | **Claude recommends Hybrid** — see Section B1 for full reasoning |
+| Accounting module lock | **Both options** — devmaster toggle in Dev Settings AND a separate unlock key per school |
+| Reversals scope | **Everything** — payments, adjustments, carryover, AND waived bills (full reversal system) |
+| Inactive student mid-term | **Freeze immediately** — hide from active lists, bills stay frozen |
+| Google Drive backup | **Both options** — OAuth (already built) AND simple folder-path sync |
 | Fee statement | **Both as separate print options** — receipt stays, new Fee Statement added |
+
+### Bill Architecture — Claude's Recommendation (Hybrid)
+
+**Pure dynamic (no storage)** sounds clean but creates serious problems:
+- You can't audit "what was the bill on Jan 1st" vs "what is it now" — crucial for disputes
+- If a fee item is deleted or amount changed retroactively, all historical bills change silently
+- Payments can't be allocated to specific bill lines (needed for partial payment tracking)
+- Reporting for past terms becomes unreliable
+
+**Pure stored (manual generate)** is what you have now — the pain point is forgetting to regenerate after changes.
+
+**Hybrid is the right architecture** — it's what every serious accounting system (including D365 F&O) uses:
+- Bills are stored rows (audit trail, historical accuracy)
+- Auto-recalculate fires silently whenever something relevant changes
+- The "Generate Bills" button becomes a bulk seed tool for new terms, not a daily workflow
+- Result: feels dynamic to the user, reliable for audit
+
+### Accounting Module Lock — Both Options
+
+Two-layer unlock:
+1. **devmaster toggle** (Dev Settings page) — the master switch per installation. You flip this when deploying to a school that paid for accounting.
+2. **Accounting unlock key** — a separate key (like the license key system) you can generate and give to schools. Format: `ACCT-XXXX-XXXX`. Schools enter it in Settings → Accounting. This lets you unlock accounting remotely without needing to visit the school or know their devmaster password.
+
+The `app_state` table already stores `accounting_enabled`. Add `accounting_unlock_key` to `school_settings`.
+
+### Reversals — Full System (Everything)
+
+| Item | How reversed | What changes |
+|---|---|---|
+| Payment | REV- receipt (already works) | Total paid drops, balance increases |
+| Bill adjustment | Soft-delete with reversal flag | Bill total recalculates |
+| Carryover | Delete with confirmation + audit log | Carry-over balance removed |
+| Waived bill | Reinstate button (already works) | Bill item re-added to total |
+| Journal entry | Reverse entry (equal/opposite) | Ledger balances restore |
 
 ---
 
@@ -368,14 +402,31 @@ document.head.removeChild(style)
 
 ## SECTION D — ACCOUNTING MODULE
 
-### D1. Default State: Hidden Until Devmaster Activates
+### D1. Accounting Module — Two-Layer Lock
 
-**Current:** `accounting_enabled` in `app_state`. Already gated by devmaster in Dev Settings.
+**Layer 1 — devmaster toggle (per installation):**
+Already built in Dev Settings. `app_state.accounting_enabled = '1'` shows the module.
 
-**Clarify for next session:** The accounting module is currently accessible only when `accounting_enabled = 1` in `app_state`. This is flipped by devmaster login in Dev Settings. This is the correct behavior — no change needed to the gate. What needs fixing:
+**Layer 2 — Accounting Unlock Key (per school, remote):**
+- Format: `ACCT-XXXX-XXXX` derived from HMAC(school_name + secret)
+- Add `accounting_unlock_key TEXT DEFAULT ''` to `school_settings` via migration
+- In Settings → a new "Accounting" tab (visible to admin): input field for unlock key
+- Handler validates key with same HMAC approach as license keys
+- On valid key: sets `app_state.accounting_enabled = '1'` permanently
+- This means you can unlock accounting for a school via WhatsApp/email (send them the key) without visiting or sharing devmaster credentials
 
-1. The default chart of accounts is already seeded in `database.js seedDefaults()`. Verify it matches the structure below.
-2. Auto-generate journal entries when payments are posted (currently missing).
+**Generate accounting keys (add to activation.js or a keygen script):**
+```javascript
+const crypto = require('crypto')
+function generateAccountingKey(schoolName) {
+  const secret = 'SF_ACCT_SECRET_2025_OJUOYE'
+  const hash = crypto.createHmac('sha256', secret)
+    .update(schoolName.toLowerCase().trim())
+    .digest('hex')
+  const raw = hash.slice(0, 8).toUpperCase()
+  return `ACCT-${raw.slice(0,4)}-${raw.slice(4,8)}`
+}
+```
 
 ### D2. Standard Chart of Accounts (D365 F&O Style)
 
@@ -447,18 +498,30 @@ if (acctEnabled === '1') {
 
 ## SECTION E — REVERSAL SYSTEM
 
-### E1. What Can Be Reversed
+### E1. Full Reversal System — Everything Is Reversible
 
-| Item | Reversal method | Effect |
-|---|---|---|
-| Payment | Already works (REV- entry) | Reduces total paid, increases balance |
-| Bill adjustment | Delete (soft delete — add `is_reversed` flag) | Re-calculate bill total |
-| Carryover | Delete with confirmation | Removes carry-over balance |
-| Waived bill | Already works (Reinstate button) | Re-adds item to total |
-| Student status | Not reversible — use Change Term instead | — |
-| Journal entry | Reverse entry (standard accounting) | Creates equal/opposite entry |
+| Item | UI location | Handler | Effect |
+|---|---|---|---|
+| Payment | PaymentsPage → Reverse button | `payments:reverse` (exists) | REV- receipt, balance increases |
+| Bill adjustment | StudentBillPage → adjustment row | `adjustments:reverse` (new) | Soft-delete, bill recalculates |
+| Carryover | CarryoverPage → row action | `carryover:delete` (exists) + audit | Balance removed for that term |
+| Waived bill | StudentBillPage → Reinstate | `bills:waive` with waive=false (exists) | Item re-added to total |
+| Journal entry | JournalPage → Reverse button | `journal:reverse` (new) | Equal/opposite entry created |
 
-**Add `is_reversed` + `reversal_reason` + `reversed_by` columns to `bill_adjustments`** via migration.
+**For bill adjustments reversal** — add columns via migration:
+```sql
+ALTER TABLE bill_adjustments ADD COLUMN is_reversed INTEGER DEFAULT 0;
+ALTER TABLE bill_adjustments ADD COLUMN reversed_by TEXT DEFAULT '';
+ALTER TABLE bill_adjustments ADD COLUMN reversed_at TEXT;
+ALTER TABLE bill_adjustments ADD COLUMN reversal_reason TEXT DEFAULT '';
+```
+Soft-delete (set `is_reversed=1`) so the audit trail is preserved. The `bills:student-summary` handler must filter `WHERE is_reversed=0` when calculating adjustments.
+
+**For journal entry reversal** — create a new entry with all debits/credits swapped, linked back to original:
+```sql
+ALTER TABLE journal_entries ADD COLUMN reversed_entry_id INTEGER REFERENCES journal_entries(id);
+ALTER TABLE journal_entries ADD COLUMN is_reversed INTEGER DEFAULT 0;
+```
 
 ---
 
