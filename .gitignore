@@ -11,6 +11,7 @@ database/
 # Demo DB is tracked
 !demo/
 !demo/*.db
+!demo/demo.db
 *.db
 *.db-shm
 *.db-wal

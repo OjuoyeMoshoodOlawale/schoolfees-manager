@@ -4,7 +4,7 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser]               = useState(null)      // logged-in user
-  const [currency, setCurrency]       = useState({ symbol: '₦', code: 'NGN' })
+  const [currency, setCurrency]       = useState({ symbol: '₦', code: 'NGN', name: 'Nigerian Naira' })
   const [activation, setActivation]   = useState(null)
   const [setupDone, setSetupDone]     = useState(false)
   const [loading, setLoading]         = useState(true)      // checking initial state
@@ -13,7 +13,14 @@ export function AuthProvider({ children }) {
   const loadCurrency = useCallback(async () => {
     try {
       const c = await window.api.getCurrency()
-      if (c) setCurrency(c)
+      if (c) {
+        // Handle both { symbol } and { currency_symbol } formats
+        setCurrency({
+          symbol: c.symbol || c.currency_symbol || '₦',
+          code:   c.code   || c.currency_code   || 'NGN',
+          name:   c.name   || c.currency_name   || 'Nigerian Naira',
+        })
+      }
     } catch {}
   }, [])
 
@@ -64,16 +71,18 @@ export function AuthProvider({ children }) {
 
   // Currency format function that uses current settings
   const fmt = (n) => {
+    const sym = currency?.symbol || '₦'
     const num = Number(n || 0)
-    return currency.symbol + num.toLocaleString('en-NG', {
+    return sym + num.toLocaleString('en-NG', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })
   }
 
   const fmtShort = (n) => {
+    const sym = currency?.symbol || '₦'
     const num = Number(n || 0)
-    if (num % 1 === 0) return currency.symbol + num.toLocaleString('en-NG')
+    if (num % 1 === 0) return sym + num.toLocaleString('en-NG')
     return fmt(num)
   }
 

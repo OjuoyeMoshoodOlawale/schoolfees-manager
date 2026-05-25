@@ -10,11 +10,18 @@ ipcMain.handle('activation:status', () => {
   if (isDev) {
     const db = getDb()
     const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
+    // Get actual school name from settings (so demo DB shows real school name)
+    const schoolName = db.prepare('SELECT school_name FROM school_settings WHERE id=1').get()?.school_name || 'Development School'
     if (!existing) {
       db.prepare(`INSERT INTO activation (id,license_key,school_name,activated_at,max_students,tier,is_active)
-        VALUES (1,'DEV-MODE','Development School',datetime('now'),9999,'unlimited',1)`).run()
+        VALUES (1,'DEV-MODE',?,datetime('now'),9999,'unlimited',1)`).run([schoolName])
     } else {
-      db.prepare('UPDATE activation SET is_active=1, max_students=9999, tier=? WHERE id=1').run(['unlimited'])
+      // Only update school name if still using default
+      if (existing.school_name === 'Development School' || existing.license_key === 'DEV-MODE') {
+        db.prepare('UPDATE activation SET is_active=1, max_students=9999, tier=?, school_name=? WHERE id=1').run(['unlimited', schoolName])
+      } else {
+        db.prepare('UPDATE activation SET is_active=1, max_students=9999, tier=? WHERE id=1').run(['unlimited'])
+      }
     }
   }
 

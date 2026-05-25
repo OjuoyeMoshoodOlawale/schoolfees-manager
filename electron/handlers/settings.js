@@ -50,6 +50,10 @@ module.exports = function registerSettingsHandlers(dbDir) {
 
   ipcMain.handle('settings:get-currency', () => {
     const s = getDb().prepare('SELECT currency_symbol, currency_code, currency_name FROM school_settings WHERE id=1').get()
-    return s || { currency_symbol: '₦', currency_code: 'NGN', currency_name: 'Nigerian Naira' }
+    // Normalize to consistent field names used in frontend
+    const symbol = s?.currency_symbol || '₦'
+    const code   = s?.currency_code   || 'NGN'
+    const name   = s?.currency_name   || 'Nigerian Naira'
+    return { symbol, code, name, currency_symbol: symbol, currency_code: code, currency_name: name }
   })
 }
