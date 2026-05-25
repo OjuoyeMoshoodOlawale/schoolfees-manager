@@ -32,51 +32,138 @@ ipcMain.handle('activation:status', () => {
 })
 
 ipcMain.handle('activation:activate', async (_, { license_key, school_name }) => {
-  // Call activation server
-  const https = require('https')
-  const os    = require('os')
-  const machine_id = require('crypto').createHash('md5')
+  const crypto = require('crypto')
+  const os     = require('os')
+  const db     = getDb()
+
+  const key = license_key.trim().toUpperCase()
+  const machine_id = crypto.createHash('md5')
     .update(os.hostname() + os.platform() + os.arch()).digest('hex')
 
+  // ── Offline key validation ─────────────────────────────────────────────────
+  // Keys are HMAC-SHA256 derived — validated without a server connection.
+  // When your activation server is ready, online validation takes priority.
+  const SECRET = 'SF_MASTER_SECRET_2025_OJUOYE'
+
+  function makeKey(seed) {
+    const h = crypto.createHash('sha256').update(`${SECRET}:${seed}`).digest('hex').toUpperCase()
+    return `${h.slice(0,4)}-${h.slice(4,8)}-${h.slice(8,12)}-${h.slice(12,16)}`
+  }
+
+  // Define all valid offline keys and their tiers
+  const OFFLINE_KEYS = {
+    // Master keys — for you (developer)
+    [makeKey('MASTER_UNLIMITED_DEVELOPER')]: { tier: 'master',    max_students: 99999, label: 'Master' },
+    [makeKey('MASTER_UNLIMITED_DEV2')]:      { tier: 'master',    max_students: 99999, label: 'Master Backup' },
+
+    // Demo keys — for agents doing demos (5 students, reusable)
+    [makeKey('DEMO_5STUDENTS_001')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_002')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_003')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_004')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_005')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_006')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_007')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_008')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_009')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_010')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_011')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_012')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_013')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_014')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+    [makeKey('DEMO_5STUDENTS_015')]:  { tier: 'demo', max_students: 5,   label: 'Demo' },
+
+    // Standard keys — 500 students
+    [makeKey('STD_500STUDENTS_001')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_002')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_003')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_004')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_005')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_006')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_007')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_008')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_009')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+    [makeKey('STD_500STUDENTS_010')]: { tier: 'standard', max_students: 500,  label: 'Standard' },
+
+    // Unlimited keys — full license
+    [makeKey('FULL_UNLIMITED_001')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_002')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_003')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_004')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_005')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_006')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_007')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_008')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_009')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+    [makeKey('FULL_UNLIMITED_010')]:  { tier: 'unlimited', max_students: 99999, label: 'Unlimited' },
+  }
+
+  // Check offline key first
+  const offlineMatch = OFFLINE_KEYS[key]
+
+  if (offlineMatch) {
+    // Valid offline key - activate immediately, no internet needed
+    const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
+    const payload = [key, school_name, null, offlineMatch.max_students, offlineMatch.tier, machine_id]
+    if (existing) {
+      db.prepare(`UPDATE activation SET license_key=?,school_name=?,activated_at=datetime('now'),
+        expires_at=?,max_students=?,tier=?,machine_id=?,is_active=1 WHERE id=1`)
+        .run(payload)
+    } else {
+      db.prepare(`INSERT INTO activation (id,license_key,school_name,activated_at,expires_at,max_students,tier,machine_id,is_active)
+        VALUES (1,?,?,datetime('now'),?,?,?,?,1)`)
+        .run(payload)
+    }
+    db.prepare('UPDATE school_settings SET school_name=? WHERE id=1').run([school_name])
+    db.prepare("UPDATE app_state SET value='1' WHERE key='setup_complete'").run()
+
+    return {
+      ok: true,
+      tier: offlineMatch.tier,
+      max_students: offlineMatch.max_students,
+      offline: true,
+      message: `${offlineMatch.label} license activated successfully`
+    }
+  }
+
+  // ── Online validation (when server is ready) ───────────────────────────────
+  // Try activation server - if unreachable, return helpful message
+  const https = require('https')
   return new Promise((resolve) => {
-    const body = JSON.stringify({ license_key: license_key.trim().toUpperCase(), school_name, machine_id })
-    const options = {
-      hostname: 'api.schoolfeesmanager.com', // your activation server
+    const body = JSON.stringify({ license_key: key, school_name, machine_id })
+    const req = https.request({
+      hostname: 'api.schoolfeesmanager.com',
       path: '/activate',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-    }
-    const req = https.request(options, (res) => {
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 8000,
+    }, (res) => {
       let data = ''
       res.on('data', d => data += d)
       res.on('end', () => {
         try {
           const result = JSON.parse(data)
           if (result.ok) {
-            const db = getDb()
             const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
+            const p = [key, school_name, result.expires_at||null, result.max_students||5, result.tier||'standard', machine_id]
             if (existing) {
               db.prepare(`UPDATE activation SET license_key=?,school_name=?,activated_at=datetime('now'),
-                expires_at=?,max_students=?,tier=?,machine_id=?,is_active=1 WHERE id=1`)
-                .run([license_key.trim().toUpperCase(), school_name, result.expires_at || null,
-                      result.max_students || 5, result.tier || 'demo', machine_id])
+                expires_at=?,max_students=?,tier=?,machine_id=?,is_active=1 WHERE id=1`).run(p)
             } else {
               db.prepare(`INSERT INTO activation (id,license_key,school_name,activated_at,expires_at,max_students,tier,machine_id,is_active)
-                VALUES (1,?,?,datetime('now'),?,?,?,?,1)`)
-                .run([license_key.trim().toUpperCase(), school_name, result.expires_at || null,
-                      result.max_students || 5, result.tier || 'demo', machine_id])
+                VALUES (1,?,?,datetime('now'),?,?,?,?,1)`).run(p)
             }
-            // Update school name in settings
-            db.prepare("UPDATE school_settings SET school_name=? WHERE id=1").run([school_name])
-            resolve({ ok: true, tier: result.tier, max_students: result.max_students, expires_at: result.expires_at })
+            db.prepare('UPDATE school_settings SET school_name=? WHERE id=1').run([school_name])
+            db.prepare("UPDATE app_state SET value='1' WHERE key='setup_complete'").run()
+            resolve({ ok: true, tier: result.tier, max_students: result.max_students })
           } else {
-            resolve({ ok: false, error: result.error || 'Invalid or already-used activation key' })
+            resolve({ ok: false, error: result.error || 'Invalid license key' })
           }
-        } catch(e) { resolve({ ok: false, error: 'Server response error' }) }
+        } catch { resolve({ ok: false, error: 'Server error. Try again.' }) }
       })
     })
-    req.on('error', () => resolve({ ok: false, error: 'Cannot reach activation server. Check your internet connection.' }))
-    req.setTimeout(10000, () => { req.destroy(); resolve({ ok: false, error: 'Connection timed out' }) })
+    req.on('error', () => resolve({ ok: false, error: 'Invalid license key. If you have an internet-based key, check your connection.' }))
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Invalid license key. If you have an internet-based key, connection timed out.' }) })
     req.write(body)
     req.end()
   })

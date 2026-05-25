@@ -50,8 +50,11 @@ export default function ActivationScreen({ onActivated }) {
             <p className="text-gray-500 text-sm mt-2">
               {success.tier === 'demo'
                 ? `Demo mode — up to ${success.max_students} students`
+                : success.tier === 'master'
+                ? 'Master license — unlimited students'
                 : `${success.tier} plan · ${success.max_students} students`}
             </p>
+            {success.message && <p className="text-xs text-emerald-600 mt-1">{success.message}</p>}
             <p className="text-xs text-gray-400 mt-3">Setting up your account…</p>
           </div>
         ) : (
@@ -89,8 +92,8 @@ export default function ActivationScreen({ onActivated }) {
               </Field>
 
               <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 rounded-lg p-3">
-                <Wifi size={12} className="text-blue-400 flex-shrink-0" />
-                <span>Internet connection required for first-time activation. After activation the app works offline.</span>
+                <Wifi size={12} className="text-emerald-400 flex-shrink-0" />
+                <span>Works <strong className="text-gray-600">offline</strong> — no internet required for activation.</span>
               </div>
 
               <button type="submit" className="btn-primary btn w-full justify-center py-3 text-base" disabled={loading}>
