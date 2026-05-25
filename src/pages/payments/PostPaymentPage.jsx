@@ -8,8 +8,13 @@ import { PageHeader, Field, Spinner } from '../../components/ui'
 
 
 export default function PostPaymentPage() {
-  const { fmt } = useAuth()
+  const { fmt, canEdit } = useAuth()
   const navigate = useNavigate()
+
+  // Viewers cannot post payments
+  useEffect(() => {
+    if (canEdit === false) { navigate('/payments'); }
+  }, [canEdit])
   const [searchParams] = useSearchParams()
   const preloadStudentId = searchParams.get('student')
 

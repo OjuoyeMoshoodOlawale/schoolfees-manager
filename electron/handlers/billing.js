@@ -33,7 +33,7 @@ ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
   ).get([student_id, tid])?.total || 0
 
   // Total billed from line items
-  const billTotal = bills.reduce((s, b) => s + Number(b.amount), 0)
+  const billTotal = bills.reduce((s, b) => b.status === 'waived' ? s : s + Number(b.amount), 0)
 
   // Calculate adjustments
   let adjTotal = 0
@@ -52,20 +52,11 @@ ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
 
   const totalExpected = billTotal + Number(prevBalance) + adjTotal
 
-  // Total paid
-  const paid = db.prepare(`
-    SELECT COALESCE(SUM(pi.amount_applied),0) as total
-    FROM payment_items pi
-    JOIN payments p ON p.id=pi.payment_id
-    JOIN student_bills sb ON sb.id=pi.student_bill_id
-    WHERE p.student_id=? AND p.term_id=?`).get([student_id, tid])?.total || 0
-
-  // Also count unallocated payments
-  const directPaid = db.prepare(`
-    SELECT COALESCE(SUM(amount_paid),0) as total FROM payments WHERE student_id=? AND term_id=?
+  // Total paid — single source of truth, excluding reversed payments
+  const totalPaid = db.prepare(`
+    SELECT COALESCE(SUM(amount_paid),0) as total FROM payments
+    WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid > 0
   `).get([student_id, tid])?.total || 0
-
-  const totalPaid = Math.max(Number(paid), Number(directPaid))
   const balance = totalExpected - totalPaid
 
   return {
@@ -175,7 +166,7 @@ ipcMain.handle('bills:list-class', (_, { class_id, term_id }) => {
       'SELECT * FROM bill_adjustments WHERE student_id=? AND term_id=?'
     ).all([student.id, tid])
 
-    const billTotal = bills.reduce((s, b) => s + b.amount, 0)
+    const billTotal = bills.reduce((s, b) => b.status === 'waived' ? s : s + b.amount, 0)
     let adjTotal = 0
     for (const adj of adjs) {
       const val = adj.calc_mode === 'percent' ? (adj.amount / 100) * billTotal : adj.amount

@@ -96,6 +96,11 @@ export function AuthProvider({ children }) {
       isDeveloper: user?.role === 'developer',
       isAdmin:     user?.role === 'developer' || user?.role === 'admin',
       isBursar:    user?.role === 'bursar',
+      isViewer:    user?.role === 'viewer',
+      // canEdit: true for admin, bursar, developer — false for viewer
+      canEdit:     user?.role !== 'viewer',
+      // canAdmin: true only for admin and developer
+      canAdmin:    user?.role === 'admin' || user?.role === 'developer',
     }}>
       {children}
     </AuthContext.Provider>

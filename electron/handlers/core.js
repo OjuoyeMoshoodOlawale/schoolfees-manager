@@ -1,7 +1,10 @@
-const { ipcMain } = require('electron')
-const { getDb } = require('../lib/database')
+const { ipcMain, dialog } = require('electron')
+const { getDb, getDbPath } = require('../lib/database')
+const path = require('path')
+const fs   = require('fs')
 
 module.exports = function register_coreHandlers() {
+  const dbDir = path.dirname(getDbPath())
 // ─── IPC Handlers ──────────────────────────────────────────────────────────
 
 // Sessions
@@ -115,14 +118,25 @@ ipcMain.handle('students:create', (_, data) => {
   }
   return { id: sid }
 })
-ipcMain.handle('students:update', (_, { id, ...data }) => {
+ipcMain.handle('students:update', (_, { id, class_id, parent_email='', ...data }) => {
+  const db = getDb()
   const { first_name, last_name, other_names='', gender, date_of_birth='', phone='',
     parent_name='', parent_phone='', address='', photo_path='', entry_type, boarding_type='day' } = data
-  getDb().prepare(`UPDATE students SET first_name=?,last_name=?,other_names=?,gender=?,
-    date_of_birth=?,phone=?,parent_name=?,parent_phone=?,address=?,photo_path=?,entry_type=?,boarding_type=?
+  db.prepare(`UPDATE students SET first_name=?,last_name=?,other_names=?,gender=?,
+    date_of_birth=?,phone=?,parent_name=?,parent_phone=?,parent_email=?,address=?,photo_path=?,entry_type=?,boarding_type=?
     WHERE id=?`)
-    .run([first_name,last_name,other_names,gender,date_of_birth,phone],
-      parent_name,parent_phone,address,photo_path,entry_type,boarding_type,id)
+    .run([first_name,last_name,other_names,gender,date_of_birth,phone,
+      parent_name,parent_phone,parent_email,address,photo_path,entry_type,boarding_type,id])
+  // Update class assignment for current term if class_id provided
+  if (class_id) {
+    const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
+    if (currentTerm) {
+      db.prepare(`INSERT INTO student_status (student_id,session_id,term_id,class_id,status,is_new_student)
+        VALUES (?,?,?,?,'active',0)
+        ON CONFLICT(student_id,term_id) DO UPDATE SET class_id=excluded.class_id`)
+        .run([id, currentTerm.session_id, currentTerm.id, class_id])
+    }
+  }
   return { ok: true }
 })
 ipcMain.handle('students:delete', (_, id) => {
@@ -177,7 +191,11 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
   db.exec('BEGIN')
   try {
     for (const sid of studentIds) insert.run([sid, new_session_id, new_term_id, new_class_id])
-  
+    // Students who have been promoted are no longer "new" — mark them returning
+    if (studentIds.length > 0) {
+      db.prepare(`UPDATE students SET entry_type='returning' WHERE id IN (${studentIds.map(()=>'?').join(',')}) AND entry_type='new'`)
+        .run(studentIds)
+    }
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
   return { ok: true, count: studentIds.length }
@@ -194,7 +212,12 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
   db.exec('BEGIN')
   try {
     for (const s of active) insert.run([s.student_id, toSessionId, toTermId, s.class_id])
-  
+    // Also mark promoted students as returning
+    const studentIds = active.map(s => s.student_id)
+    if (studentIds.length > 0) {
+      db.prepare(`UPDATE students SET entry_type='returning' WHERE id IN (${studentIds.map(()=>'?').join(',')}) AND entry_type='new'`)
+        .run(studentIds)
+    }
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
   return { ok: true, count: active.length }

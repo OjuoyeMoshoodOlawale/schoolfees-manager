@@ -229,7 +229,11 @@ export default function SessionsPage() {
               key={s.id}
               session={s}
               currentTermId={currentTermId}
-              onSetCurrent={() => {}}
+              onSetCurrent={async (termId) => {
+                await window.api.setCurrentSession(s.id, termId)
+                toast.success('Active term updated')
+                load()
+              }}
               onDelete={setDeleteTarget}
               onRefresh={load}
             />

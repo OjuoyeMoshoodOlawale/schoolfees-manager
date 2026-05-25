@@ -13,7 +13,7 @@ import { fmtDate } from '../../lib/utils'
 export default function StudentBillPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { fmt } = useAuth()
+  const { fmt, canEdit } = useAuth()
   const [summary, setSummary]       = useState(null)
   const [payments, setPayments]     = useState([])
   const [loading, setLoading]       = useState(true)
@@ -157,15 +157,17 @@ export default function StudentBillPage() {
       <div className="card mb-4 overflow-hidden p-0">
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700">Fee Items</h2>
-          <div className="flex gap-2 print:hidden">
-            <button className="btn-secondary btn btn-sm" onClick={onRegenerateBills}
-              title="Re-generate bills based on student's current profile (boarding type, gender, entry type)">
-              ↺ Regenerate Bills
-            </button>
-            <button className="btn-primary btn btn-sm" onClick={() => setShowAdjModal(true)}>
-              <Plus size={13} /> Add Adjustment
-            </button>
-          </div>
+          {canEdit && (
+            <div className="flex gap-2 print:hidden">
+              <button className="btn-secondary btn btn-sm" onClick={onRegenerateBills}
+                title="Re-generate bills based on student's current profile (boarding type, gender, entry type)">
+                ↺ Regenerate Bills
+              </button>
+              <button className="btn-primary btn btn-sm" onClick={() => setShowAdjModal(true)}>
+                <Plus size={13} /> Add Adjustment
+              </button>
+            </div>
+          )}
         </div>
 
         {bills.length === 0 ? (
@@ -194,10 +196,12 @@ export default function StudentBillPage() {
                   <td><span className={`badge ${b.status === 'waived' ? 'badge-gray' : 'badge-blue'}`}>{b.status}</span></td>
                   <td className="text-right font-semibold">{fmt(b.amount)}</td>
                   <td className="text-right print:hidden">
-                    <button
-                      onClick={() => onWaive(b)}
-                      className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                    >{b.status === 'waived' ? 'Reinstate' : 'Waive'}</button>
+                    {canEdit && (
+                      <button
+                        onClick={() => onWaive(b)}
+                        className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                      >{b.status === 'waived' ? 'Reinstate' : 'Waive'}</button>
+                    )}
                   </td>
                 </tr>
               ))}

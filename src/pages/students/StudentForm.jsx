@@ -40,7 +40,14 @@ export default function StudentForm() {
         if (!student) { toast.error('Student not found'); navigate('/students'); return }
         setPhotoPath(student.photo_path || '')
         if (student.photo_path) setPhotoPreview(`file://${student.photo_path}`)
-        reset(student)
+        // Load class from student_status for current term
+        let classId = ''
+        if (term) {
+          const statuses = await window.api.getStudentStatus(Number(id))
+          const currentStatus = statuses?.find(s => s.term_id === term.id)
+          if (currentStatus) classId = String(currentStatus.class_id)
+        }
+        reset({ ...student, class_id: classId })
       } else {
         const regNo = await window.api.nextRegNumber()
         reset(prev => ({ ...prev, reg_number: regNo }))
@@ -257,7 +264,7 @@ export default function StudentForm() {
               <select className="form-select" disabled={!currentTerm}
                 {...register('class_id', { required: !!currentTerm && 'Class is required' })}>
                 <option value="">— Select class —</option>
-                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {classes.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
               </select>
             </Field>
           </div>

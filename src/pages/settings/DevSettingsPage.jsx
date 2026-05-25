@@ -50,6 +50,9 @@ export default function DevSettingsPage() {
     } catch (e) { toast.error(e.message) }
     finally { setCheckingUpdate(false) }
   }
+
+  const toggleAccounting = async () => {
+    setToggling(true)
     try {
       const newVal = !accounting
       await window.api.setAccounting(newVal)

@@ -26,12 +26,13 @@ const NAV_GROUPS = [
   {
     section: 'Fees & Billing',
     items: [
-      { to: '/fees/items',        icon: ListChecks,        label: 'Fee Items' },
-      { to: '/fees/config',       icon: SlidersHorizontal, label: 'Bill Config' },
-      { to: '/fees/copy',         icon: Copy,              label: 'Copy Config' },
-      { to: '/fees/preview',      icon: Eye,               label: 'Bill Preview' },
-      { to: '/billing/generate',  icon: Zap,               label: 'Generate Bills' },
-      { to: '/billing/carryover', icon: History,           label: 'Carry-over' },
+      { to: '/fees/items',          icon: ListChecks,        label: 'Fee Items' },
+      { to: '/fees/config',         icon: SlidersHorizontal, label: 'Bill Config' },
+      { to: '/fees/copy',           icon: Copy,              label: 'Copy Config' },
+      { to: '/fees/preview',        icon: Eye,               label: 'Bill Preview' },
+      { to: '/students',            icon: FileText,          label: 'Student Bills' },
+      { to: '/billing/carryover',   icon: History,           label: 'Carry-over' },
+      { to: '/billing/class-print', icon: Printer,           label: 'Class Bill Print' },
     ]
   },
   {
