@@ -102,6 +102,21 @@ function startScheduler() {
     if (cfg.gdriveEnabled) {
       await runGDriveAutoBackup()
     }
+    // Also sync to cloud folder if configured
+    try {
+      const { getDbPath } = require('./database')
+      const syncCfgPath = require('path').join(require('path').dirname(getDbPath()), 'sync_folder.json')
+      if (require('fs').existsSync(syncCfgPath)) {
+        const syncCfg = JSON.parse(require('fs').readFileSync(syncCfgPath, 'utf8'))
+        if (syncCfg.enabled && syncCfg.folder) {
+          const ipcMain = require('electron').ipcMain
+          // Fire via IPC to reuse the sync handler
+          const { BrowserWindow } = require('electron')
+          const win = BrowserWindow.getAllWindows()[0]
+          if (win) win.webContents.executeJavaScript('window.api.syncNow()').catch(() => {})
+        }
+      }
+    } catch(e) { console.log('[Scheduler] Sync folder skip:', e.message) }
   })
 
   console.log(`[Scheduler] Auto-backup scheduled at ${cfg.time} daily`)

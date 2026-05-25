@@ -25,6 +25,7 @@ import BillPreviewPage    from './pages/fees/BillPreviewPage'
 import CopyConfigPage     from './pages/fees/CopyConfigPage'
 import GenerateBillsPage  from './pages/billing/GenerateBillsPage'
 import StudentBillPage    from './pages/billing/StudentBillPage'
+import FeeStatementPage   from './pages/billing/FeeStatementPage'
 import CarryoverPage      from './pages/billing/CarryoverPage'
 import ClassBillPrintPage from './pages/billing/ClassBillPrintPage'
 import PostPaymentPage    from './pages/payments/PostPaymentPage'
@@ -33,7 +34,8 @@ import DebtorsPage        from './pages/payments/DebtorsPage'
 import AccountReportPage  from './pages/reports/AccountReportPage'
 import BulkSmsPage        from './pages/reports/BulkSmsPage'
 import UsersPage          from './pages/users/UsersPage'
-import ImportStudentsPage from './pages/import/ImportStudentsPage'
+import ImportStudentsPage    from './pages/import/ImportStudentsPage'
+import OpeningBalancesPage   from './pages/import/OpeningBalancesPage'
 
 // Accounting
 import AccountsPage      from './pages/accounting/AccountsPage'
@@ -105,13 +107,15 @@ function MainApp() {
         <Route path="/students/new"           element={<StudentForm />} />
         <Route path="/students/:id/edit"      element={<StudentForm />} />
         <Route path="/promote"                element={<PromotePage />} />
-        <Route path="/import/students"        element={<ImportStudentsPage />} />
+        <Route path="/import/students"          element={<ImportStudentsPage />} />
+        <Route path="/import/opening-balances"  element={<OpeningBalancesPage />} />
         <Route path="/fees/items"             element={<FeeItemsPage />} />
         <Route path="/fees/config"            element={<BillConfigPage />} />
         <Route path="/fees/copy"              element={<CopyConfigPage />} />
         <Route path="/fees/preview"           element={<BillPreviewPage />} />
         <Route path="/billing/generate"       element={<GenerateBillsPage />} />
-        <Route path="/billing/student/:id"    element={<StudentBillPage />} />
+        <Route path="/billing/student/:id"          element={<StudentBillPage />} />
+        <Route path="/billing/student/:id/statement" element={<FeeStatementPage />} />
         <Route path="/billing/carryover"      element={<CarryoverPage />} />
         <Route path="/billing/class-print"    element={<ClassBillPrintPage />} />
         <Route path="/payments"               element={<PaymentsPage />} />

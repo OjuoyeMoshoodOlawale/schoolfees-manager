@@ -40,6 +40,25 @@ ipcMain.handle('payments:post', (_, data) => {
     VALUES ('PAYMENT_POSTED','payments',?,?)`)
     .run([paymentId, JSON.stringify({ student_id, amount_paid, receipt_number })])
 
+  // ── Auto-journal entry if accounting is enabled ───────────────────────────
+  try {
+    const acctEnabled = db.prepare("SELECT value FROM app_state WHERE key='accounting_enabled'").get()?.value
+    if (acctEnabled === '1') {
+      const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1010' AND is_active=1").get()
+      const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4000' AND is_active=1").get()
+      if (bankAcc && feeAcc) {
+        const ref = `AUTO-PMT-${receipt_number}`
+        const entryId = db.prepare(`INSERT INTO journal_entries (reference, description, entry_date, entry_type, posted_by)
+          VALUES (?,?,?,'payment',?)`)
+          .run([ref, `Payment received: ${receipt_number}`, payment_date, posted_by]).lastInsertRowid
+        db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,?,0)')
+          .run([entryId, bankAcc.id, amount_paid])
+        db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,0,?)')
+          .run([entryId, feeAcc.id, amount_paid])
+      }
+    }
+  } catch(e) { /* non-critical — don't fail the payment */ }
+
   // Auto SMS/Email if enabled (fire and forget - don't block payment posting)
   try {
     const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
@@ -158,6 +177,27 @@ ipcMain.handle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
       VALUES ('PAYMENT_REVERSED','payments',?,?,?)`)
       .run([payment_id, reversed_by || 'admin',
             JSON.stringify({ original_receipt: payment.receipt_number, reason, amount: payment.amount_paid })])
+
+    // ── Reverse journal entry if accounting enabled ───────────────────────
+    try {
+      const acctEnabled = db.prepare("SELECT value FROM app_state WHERE key='accounting_enabled'").get()?.value
+      if (acctEnabled === '1') {
+        const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1010' AND is_active=1").get()
+        const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4000' AND is_active=1").get()
+        if (bankAcc && feeAcc) {
+          const amt = Math.abs(payment.amount_paid)
+          const ref = `AUTO-REV-${reversal_receipt}`
+          const entryId = db.prepare(`INSERT INTO journal_entries (reference, description, entry_date, entry_type, posted_by)
+            VALUES (?,?,date('now'),'payment',?)`)
+            .run([ref, `Payment reversal: ${payment.receipt_number}`, reversed_by || 'admin']).lastInsertRowid
+          // Reverse: Dr income, Cr bank
+          db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,?,0)')
+            .run([entryId, feeAcc.id, amt])
+          db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,0,?)')
+            .run([entryId, bankAcc.id, amt])
+        }
+      }
+    } catch(e) { /* non-critical */ }
 
     db.exec('COMMIT')
     return { ok: true, reversal_receipt }

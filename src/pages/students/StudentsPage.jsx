@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import {
   UserPlus, Pencil, Trash2, Eye, Download, Users,
-  UserCheck, UserX, MoreHorizontal, RefreshCw
+  UserCheck, UserX, MoreHorizontal, RefreshCw, FileText
 } from 'lucide-react'
 import { PageHeader, DataTable, SearchInput, Confirm, Spinner, exportToExcel } from '../../components/ui'
 
@@ -253,12 +253,16 @@ export default function StudentsPage() {
       render: v => <StatusBadge status={v} />
     },
     {
-      key: 'actions', label: '', width: '90px', sortable: false,
+      key: 'actions', label: '', width: '120px', sortable: false,
       render: (_, row) => (
         <div className="flex gap-1 justify-end">
           <button title="View" className="btn btn-sm text-gray-500 hover:bg-gray-100"
             onClick={e => { e.stopPropagation(); setSelected(row) }}>
             <Eye size={13} />
+          </button>
+          <button title="View Bill" className="btn btn-sm text-emerald-600 hover:bg-emerald-50 border border-emerald-200"
+            onClick={e => { e.stopPropagation(); navigate(`/billing/student/${row.id}`) }}>
+            <FileText size={13} />
           </button>
           <button title="Edit" className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
             onClick={e => { e.stopPropagation(); navigate(`/students/${row.id}/edit`) }}>

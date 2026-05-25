@@ -51,6 +51,10 @@ export default function BackupPage() {
   const [creds, setCreds]               = useState({ client_id: '', client_secret: '' })
   const [gdriveLoading, setGDriveLoading] = useState(false)
 
+  // Cloud folder sync state
+  const [syncCfg, setSyncCfg]     = useState(null)
+  const [syncing, setSyncing]     = useState(false)
+
   // Scheduler state
   const [schedCfg, setSchedCfg]   = useState(null)
   const [schedSaving, setSchedSaving] = useState(false)
@@ -59,6 +63,7 @@ export default function BackupPage() {
     window.api.getDbPath().then(p => setDbPath(p))
     window.api.gdriveStatus().then(s => setGDriveStatus(s))
     window.api.schedulerGetConfig().then(c => setSchedCfg(c))
+    window.api.getSyncFolder().then(s => setSyncCfg(s))
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
@@ -205,10 +210,62 @@ export default function BackupPage() {
           </div>
         </Card>
 
-        {/* ── Google Drive Backup ── */}
+        {/* ── Cloud Folder Sync ── */}
+        <Card icon={Cloud} title="Cloud Folder Sync" subtitle="Sync to any local Google Drive or OneDrive folder — zero setup required." color="green"
+          badge={syncCfg?.enabled && syncCfg?.folder ? <Pill green><Wifi size={10} className="inline mr-1" />Active</Pill> : <Pill yellow>Not set</Pill>}
+        >
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              If Google Drive or OneDrive desktop app is installed, it syncs a local folder automatically.
+              Just point SchoolFees Manager at that folder — no Google account setup needed.
+            </p>
+            <div className="flex gap-2">
+              <input
+                className="form-input text-xs flex-1 font-mono"
+                readOnly
+                value={syncCfg?.folder || ''}
+                placeholder="No folder selected"
+              />
+              <button className="btn btn-secondary btn-sm whitespace-nowrap" onClick={async () => {
+                const folder = await window.api.pickSyncFolder()
+                if (folder) {
+                  await window.api.setSyncFolder({ folder })
+                  setSyncCfg({ folder, enabled: true })
+                  toast.success('Sync folder saved!')
+                }
+              }}>
+                Browse…
+              </button>
+            </div>
+            {syncCfg?.folder && (
+              <div className="space-y-2">
+                {syncCfg.lastSync && (
+                  <p className="text-xs text-gray-500 flex items-center gap-1"><Clock size={11} /> Last sync: {fmtDriveDate(syncCfg.lastSync)}</p>
+                )}
+                <button
+                  className="btn w-full justify-center py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg font-medium text-sm flex items-center gap-2"
+                  onClick={async () => {
+                    setSyncing(true)
+                    try {
+                      const r = await window.api.syncNow()
+                      if (r.ok) { toast.success('Synced to cloud folder!'); loadAll() }
+                      else toast.error(r.error)
+                    } catch(e) { toast.error(e.message) }
+                    finally { setSyncing(false) }
+                  }}
+                  disabled={syncing}
+                >
+                  <CloudUpload size={14} /> {syncing ? 'Syncing…' : 'Sync Now'}
+                </button>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* ── Google Drive Backup (OAuth — Advanced) ── */}
         <Card
           icon={CloudUpload}
-          title="Google Drive Backup"
+          title="Google Drive Backup (Advanced)"
           subtitle="Automatic versioned cloud backup — accessible from anywhere."
           color="green"
           badge={gdriveStatus?.connected

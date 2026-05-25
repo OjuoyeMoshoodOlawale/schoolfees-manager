@@ -352,3 +352,37 @@ ipcMain.handle('bills:regenerate-student', (_, { student_id, term_id }) => {
 })
 
 }
+
+// ── Import opening balances ───────────────────────────────────────────────────
+ipcMain.handle('import:opening-balances', (_, { rows, term_id }) => {
+  const db = getDb()
+  if (!term_id) return { ok: false, error: 'No term specified' }
+
+  let imported = 0, skipped = 0
+  const errors = []
+
+  db.exec('BEGIN')
+  try {
+    for (const row of rows) {
+      // Find student by reg_number
+      const student = db.prepare('SELECT id FROM students WHERE reg_number=?').get([row.reg_number])
+      if (!student) {
+        errors.push(`Reg "${row.reg_number}" not found — skipped`)
+        skipped++
+        continue
+      }
+      // INSERT OR REPLACE carry-over balance
+      db.prepare(`INSERT INTO previous_term_balance
+        (student_id, from_term_id, to_term_id, balance_amount, carried_over_at)
+        VALUES (?, NULL, ?, ?, datetime('now'))
+        ON CONFLICT(student_id, to_term_id) DO UPDATE SET
+          balance_amount = excluded.balance_amount,
+          carried_over_at = datetime('now')`)
+        .run([student.id, term_id, row.balance])
+      imported++
+    }
+    db.exec('COMMIT')
+  } catch(e) { db.exec('ROLLBACK'); return { ok: false, error: e.message } }
+
+  return { ok: true, imported, skipped, errors: errors.slice(0, 20) }
+})

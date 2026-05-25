@@ -240,7 +240,31 @@ ipcMain.handle('import:students', (_, { rows, class_id, session_id, term_id, ent
       const row = toInsert[i]
       if (!row._valid) { errors.push(`Row ${row._row}: ${row._errors.join(', ')}`); skipped++; continue }
 
-      // Generate reg number
+      // Check for duplicate reg_number or duplicate name in same class
+      if (row.reg_number) {
+        const existingReg = db.prepare('SELECT id FROM students WHERE reg_number=?').get([row.reg_number])
+        if (existingReg) {
+          errors.push(`Row ${row._row}: Reg number "${row.reg_number}" already exists — skipped`)
+          skipped++
+          continue
+        }
+      }
+      // Check duplicate name in same term/class
+      if (class_id && term_id) {
+        const existingName = db.prepare(`
+          SELECT s.id FROM students s
+          JOIN student_status ss ON ss.student_id=s.id
+          WHERE LOWER(s.first_name)=LOWER(?) AND LOWER(s.last_name)=LOWER(?)
+            AND ss.class_id=? AND ss.term_id=?`
+        ).get([row.first_name, row.last_name, class_id, term_id])
+        if (existingName) {
+          errors.push(`Row ${row._row}: "${row.first_name} ${row.last_name}" already exists in this class — skipped`)
+          skipped++
+          continue
+        }
+      }
+
+      // Generate reg number if not provided
       const last = getLastReg.get([`STU/${year}/%`])
       const seq  = last ? String(parseInt(last.reg_number.split('/')[2] || '0') + 1).padStart(3, '0') : String(i + currentCount + 1).padStart(3, '0')
       const reg_number = `STU/${year}/${seq}`

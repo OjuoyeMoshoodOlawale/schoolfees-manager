@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Import
   importStudents:     (d)    => ipcRenderer.invoke('import:students', d),
+  importOpeningBalances: (d) => ipcRenderer.invoke('import:opening-balances', d),
 
   // ── Communications
   listSmsProviders:   ()     => ipcRenderer.invoke('sms:list-providers'),
@@ -134,6 +135,10 @@ contextBridge.exposeInMainWorld('api', {
   backupLocal:        ()     => ipcRenderer.invoke('backup:local'),
   restoreLocal:       ()     => ipcRenderer.invoke('backup:restore-local'),
   reloadApp:          ()     => ipcRenderer.invoke('backup:reload-app'),
+  getSyncFolder:      ()     => ipcRenderer.invoke('backup:get-sync-folder'),
+  setSyncFolder:      (d)    => ipcRenderer.invoke('backup:set-sync-folder', d),
+  pickSyncFolder:     ()     => ipcRenderer.invoke('backup:pick-sync-folder'),
+  syncNow:            ()     => ipcRenderer.invoke('backup:sync-now'),
 
   // ── Google Drive Backup
   gdriveStatus:       ()     => ipcRenderer.invoke('gdrive:status'),

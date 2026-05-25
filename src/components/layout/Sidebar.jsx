@@ -17,10 +17,11 @@ const NAV_GROUPS = [
   {
     section: 'Students',
     items: [
-      { to: '/students',     icon: Users,          label: 'All Students' },
-      { to: '/students/new', icon: UserPlus,        label: 'Register Student' },
-      { to: '/promote',      icon: ArrowUpCircle,   label: 'Promote / Change Term' },
-  { to: '/import/students', icon: FileSpreadsheet, label: 'Import from Excel' },
+      { to: '/students',                   icon: Users,          label: 'All Students' },
+      { to: '/students/new',               icon: UserPlus,       label: 'Register Student' },
+      { to: '/promote',                    icon: ArrowUpCircle,  label: 'Promote / Change Term' },
+      { to: '/import/students',            icon: FileSpreadsheet,label: 'Import from Excel' },
+      { to: '/import/opening-balances',    icon: DollarSign,     label: 'Opening Balances' },
     ]
   },
   {

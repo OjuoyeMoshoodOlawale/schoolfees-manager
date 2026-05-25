@@ -95,3 +95,57 @@ module.exports = function registerBackupHandlers() {
     return { ok: true }
   })
 }
+
+// ── Cloud folder sync (simpler alternative to OAuth) ─────────────────────────
+const path_m = require('path')
+const fs_m   = require('fs')
+
+function getSyncConfigPath() {
+  const { getDbPath } = require('../lib/database')
+  return path_m.join(path_m.dirname(getDbPath()), 'sync_folder.json')
+}
+function loadSyncConfig() {
+  try { return JSON.parse(fs_m.readFileSync(getSyncConfigPath(), 'utf8')) } catch { return null }
+}
+function saveSyncConfig(cfg) {
+  fs_m.writeFileSync(getSyncConfigPath(), JSON.stringify(cfg, null, 2))
+}
+
+ipcMain.handle('backup:get-sync-folder', () => loadSyncConfig())
+
+ipcMain.handle('backup:set-sync-folder', async (_, { folder }) => {
+  try {
+    saveSyncConfig({ folder, enabled: true })
+    return { ok: true }
+  } catch(e) { return { ok: false, error: e.message } }
+})
+
+ipcMain.handle('backup:pick-sync-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select Cloud Sync Folder (e.g. Google Drive or OneDrive folder)',
+    properties: ['openDirectory']
+  })
+  if (result.canceled) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('backup:sync-now', async () => {
+  const cfg    = loadSyncConfig()
+  if (!cfg?.folder || !cfg.enabled) return { ok: false, error: 'No sync folder configured' }
+  const { getDbPath } = require('../lib/database')
+  const dbPath = getDbPath()
+  const stamp  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const dest   = path_m.join(cfg.folder, `schoolfees_backup_${stamp}.db`)
+  try {
+    if (!fs_m.existsSync(cfg.folder)) return { ok: false, error: 'Sync folder not found. Is your cloud drive mounted?' }
+    fs_m.copyFileSync(dbPath, dest)
+    // Keep last 10 in sync folder
+    const files = fs_m.readdirSync(cfg.folder)
+      .filter(f => f.startsWith('schoolfees_backup_') && f.endsWith('.db'))
+      .map(f => ({ name: f, time: fs_m.statSync(path_m.join(cfg.folder, f)).mtimeMs }))
+      .sort((a, b) => b.time - a.time)
+    files.slice(10).forEach(f => { try { fs_m.unlinkSync(path_m.join(cfg.folder, f.name)) } catch {} })
+    saveSyncConfig({ ...cfg, lastSync: new Date().toISOString() })
+    return { ok: true, path: dest }
+  } catch(e) { return { ok: false, error: e.message } }
+})

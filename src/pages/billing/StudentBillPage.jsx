@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import {
   ArrowLeft, Plus, Trash2, Receipt,
-  TrendingDown, TrendingUp, Printer
+  TrendingDown, TrendingUp, Printer, FileText
 } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
@@ -117,14 +117,19 @@ export default function StudentBillPage() {
           actions={
             <div className="flex gap-2">
               <button className="btn-secondary btn btn-sm" onClick={handlePrint}>
-                <Printer size={14} /> Print Statement
+                <Printer size={14} /> Print
+              </button>
+              <button className="btn-secondary btn btn-sm" onClick={() => navigate(`/billing/student/${id}/statement`)}>
+                <FileText size={14} /> Statement
               </button>
               <button className="btn-secondary btn" onClick={() => navigate(-1)}>
                 <ArrowLeft size={14} /> Back
               </button>
-              <button className="btn-primary btn" onClick={() => navigate(`/payments/new?student=${id}`)}>
-                <Receipt size={14} /> Post Payment
-              </button>
+              {canEdit && (
+                <button className="btn-primary btn" onClick={() => navigate(`/payments/new?student=${id}`)}>
+                  <Receipt size={14} /> Post Payment
+                </button>
+              )}
             </div>
           }
         />
