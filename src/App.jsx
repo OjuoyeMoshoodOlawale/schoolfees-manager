@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Layout from './components/layout/Layout'
@@ -39,6 +40,7 @@ import JournalPage       from './pages/accounting/JournalPage'
 import InvoicesPage      from './pages/accounting/InvoicesPage'
 import LedgerPage        from './pages/accounting/LedgerPage'
 import TrialBalancePage  from './pages/accounting/TrialBalancePage'
+import AccountStatementPage from './pages/accounting/AccountStatementPage'
 
 // ─── Auth Gate ───────────────────────────────────────────────────────────────
 function AuthGate() {
@@ -77,8 +79,8 @@ function AuthGate() {
 }
 
 function LoginScreenWrapper({ onLogin }) {
-  const [settings, setSettings] = require('react').useState(null)
-  require('react').useEffect(() => {
+  const [settings, setSettings] = useState(null)
+  useEffect(() => {
     window.api.getSettings().then(setSettings)
   }, [])
   return (
@@ -130,6 +132,7 @@ function MainApp() {
           <Route path="/accounting/invoices"       element={<InvoicesPage />} />
           <Route path="/accounting/ledger"         element={<LedgerPage />} />
           <Route path="/accounting/trial-balance"  element={<TrialBalancePage />} />
+          <Route path="/accounting/statement"      element={<AccountStatementPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />

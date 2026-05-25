@@ -92,14 +92,36 @@
 
 /* ─── Print Styles ────────────────────────────────────────────────────────── */
 @media print {
-  .sidebar, .topbar, .no-print, button { display: none !important; }
-  body { background: white !important; }
-  .print-only { display: block !important; }
+  /* Hide everything except receipt/report content */
+  .sidebar, nav, .no-print,
+  button:not(.print-show),
+  .page-header .flex.gap-2 { display: none !important; }
+
+  body, html { background: white !important; margin: 0; padding: 0; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .print-only  { display: block !important; }
   .receipt-page { page-break-after: always; }
+  .page-break  { page-break-before: always; }
+
+  /* A4 receipt */
+  .receipt-content { padding: 20mm; font-size: 11pt; }
 
   /* Thermal 80mm */
-  .thermal-80 { width: 80mm; margin: 0 auto; font-size: 11px; }
-  .thermal-58 { width: 58mm; margin: 0 auto; font-size: 10px; }
+  body.print-thermal80 .receipt-content {
+    width: 72mm; margin: 0 auto; font-size: 9pt;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Thermal 58mm */
+  body.print-thermal58 .receipt-content {
+    width: 50mm; margin: 0 auto; font-size: 8pt;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Account statement */
+  #print-statement { padding: 15mm; }
+  #print-statement .bg-slate-900 { background: #1e293b !important; color: white !important; }
 }
 
 /* ─── Image fix — always show file:// paths ───────────────────────────────── */

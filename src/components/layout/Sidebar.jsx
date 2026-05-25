@@ -5,7 +5,7 @@ import {
   BookOpen, Settings, CloudUpload, ListChecks, SlidersHorizontal,
   Copy, Eye, Zap, Receipt, AlertTriangle, BarChart2, History,
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
-  ChevronDown, ChevronRight
+  ChevronDown, ChevronRight, FileSpreadsheet
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -20,6 +20,7 @@ const NAV_GROUPS = [
       { to: '/students',     icon: Users,          label: 'All Students' },
       { to: '/students/new', icon: UserPlus,        label: 'Register Student' },
       { to: '/promote',      icon: ArrowUpCircle,   label: 'Promote / Change Term' },
+  { to: '/import/students', icon: FileSpreadsheet, label: 'Import from Excel' },
     ]
   },
   {
@@ -56,7 +57,8 @@ const NAV_GROUPS = [
       { to: '/accounting/journal',   icon: FileText,   label: 'Journal Entries' },
       { to: '/accounting/invoices',  icon: Receipt,    label: 'Invoices' },
       { to: '/accounting/ledger',    icon: BookMarked, label: 'Ledger' },
-      { to: '/accounting/trial-balance', icon: Scale,  label: 'Trial Balance' },
+      { to: '/accounting/trial-balance',  icon: Scale,        label: 'Trial Balance' },
+      { to: '/accounting/statement',    icon: FileText,     label: 'Account Statement' },
     ]
   },
   {
