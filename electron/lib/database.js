@@ -5,31 +5,44 @@ const defaults = require('./defaults')
 
 let db = null
 let dbPath = null
+let isClosing = false
 
 function getDbPath() { return dbPath }
-
 function setDbPath(p) { dbPath = p }
 
+// ─── Get or open DB ───────────────────────────────────────────────────────────
 function getDb() {
+  if (isClosing) throw new Error('Database is being replaced. Please wait a moment and try again.')
   if (!db) {
     if (!dbPath) throw new Error('DB path not set')
     db = new Database(dbPath)
     db.exec('PRAGMA foreign_keys = ON')
+    db.exec('PRAGMA journal_mode = DELETE')  // WAL can cause lock issues on Windows
+    db.exec('PRAGMA synchronous = NORMAL')
+    db.exec('PRAGMA busy_timeout = 5000')    // Wait up to 5s if locked
     initSchema()
     seedDefaults()
   }
   return db
 }
 
-// ─── Close DB (needed before restore) ────────────────────────────────────────
+// ─── Safe close — fully releases file locks ───────────────────────────────────
 function closeDb() {
   if (db) {
+    isClosing = true
+    try {
+      db.exec('PRAGMA wal_checkpoint(FULL)')  // flush any WAL data
+    } catch {}
     try { db.close() } catch {}
     db = null
+    // Small delay to let Windows release file handle
+    const end = Date.now() + 200
+    while (Date.now() < end) { /* spin */ }
+    isClosing = false
   }
 }
 
-// ─── Reopen DB after restore ──────────────────────────────────────────────────
+// ─── Reopen after restore ─────────────────────────────────────────────────────
 function reopenDb() {
   closeDb()
   return getDb()
@@ -38,7 +51,6 @@ function reopenDb() {
 // ─── Schema ───────────────────────────────────────────────────────────────────
 function initSchema() {
   db.exec(`
-    -- App state flags
     CREATE TABLE IF NOT EXISTS app_state (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -46,7 +58,6 @@ function initSchema() {
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('setup_complete','0');
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('accounting_enabled','0');
 
-    -- Activation
     CREATE TABLE IF NOT EXISTS activation (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       license_key TEXT NOT NULL,
@@ -59,7 +70,6 @@ function initSchema() {
       is_active INTEGER NOT NULL DEFAULT 0
     );
 
-    -- Users
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
@@ -71,7 +81,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- School settings (single row)
     CREATE TABLE IF NOT EXISTS school_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       school_name TEXT NOT NULL DEFAULT 'My School',
@@ -106,7 +115,6 @@ function initSchema() {
     );
     INSERT OR IGNORE INTO school_settings (id, school_name) VALUES (1, 'My School');
 
-    -- Sessions
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -114,7 +122,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Terms
     CREATE TABLE IF NOT EXISTS terms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -125,7 +132,6 @@ function initSchema() {
       UNIQUE(session_id, name)
     );
 
-    -- Classes
     CREATE TABLE IF NOT EXISTS classes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -133,7 +139,6 @@ function initSchema() {
       is_active INTEGER NOT NULL DEFAULT 1
     );
 
-    -- Students
     CREATE TABLE IF NOT EXISTS students (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       reg_number TEXT NOT NULL UNIQUE,
@@ -153,7 +158,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Student status
     CREATE TABLE IF NOT EXISTS student_status (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -166,7 +170,6 @@ function initSchema() {
       UNIQUE(student_id, term_id)
     );
 
-    -- Fee items
     CREATE TABLE IF NOT EXISTS fee_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -175,7 +178,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Bill config
     CREATE TABLE IF NOT EXISTS bill_config (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       term_id INTEGER NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
@@ -191,7 +193,6 @@ function initSchema() {
       UNIQUE(term_id, class_id, fee_item_id)
     );
 
-    -- Bill config copy log
     CREATE TABLE IF NOT EXISTS bill_config_copy_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_term_id INTEGER NOT NULL REFERENCES terms(id),
@@ -202,7 +203,6 @@ function initSchema() {
       copied_by TEXT DEFAULT 'admin'
     );
 
-    -- Student bills
     CREATE TABLE IF NOT EXISTS student_bills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -215,7 +215,6 @@ function initSchema() {
       UNIQUE(student_id, bill_config_id)
     );
 
-    -- Bill adjustments
     CREATE TABLE IF NOT EXISTS bill_adjustments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -228,7 +227,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Previous term balance
     CREATE TABLE IF NOT EXISTS previous_term_balance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -239,7 +237,6 @@ function initSchema() {
       UNIQUE(student_id, to_term_id)
     );
 
-    -- Payments
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -255,7 +252,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- Payment items
     CREATE TABLE IF NOT EXISTS payment_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
@@ -263,7 +259,6 @@ function initSchema() {
       amount_applied REAL NOT NULL
     );
 
-    -- ── Accounting Module ────────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       code TEXT NOT NULL UNIQUE,
@@ -320,7 +315,6 @@ function initSchema() {
       amount REAL NOT NULL DEFAULT 0
     );
 
-    -- ── SMS / Email Log ──────────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS sms_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -343,7 +337,6 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- ── Audit log ────────────────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
@@ -356,19 +349,15 @@ function initSchema() {
   `)
 }
 
-// ─── Seed default data ────────────────────────────────────────────────────────
+// ─── Seed default data (INSERT OR IGNORE — safe to run multiple times) ────────
 function seedDefaults() {
-  // Classes
-  const insertClass = db.prepare('INSERT OR IGNORE INTO classes (name, level) VALUES (?,?)')
-  for (const c of defaults.classes) insertClass.run([c.name, c.level])
-
-  // Fee items
-  const insertFee = db.prepare('INSERT OR IGNORE INTO fee_items (name, description) VALUES (?,?)')
-  for (const f of defaults.feeItems) insertFee.run([f.name, f.description])
-
-  // Accounts
+  const insertClass   = db.prepare('INSERT OR IGNORE INTO classes (name, level) VALUES (?,?)')
+  const insertFee     = db.prepare('INSERT OR IGNORE INTO fee_items (name, description) VALUES (?,?)')
   const insertAccount = db.prepare('INSERT OR IGNORE INTO accounts (code, name, type, account_group) VALUES (?,?,?,?)')
-  for (const a of defaults.accounts) insertAccount.run([a.code, a.name, a.type, a.group])
+
+  for (const c of defaults.classes)   insertClass.run([c.name, c.level])
+  for (const f of defaults.feeItems)  insertFee.run([f.name, f.description])
+  for (const a of defaults.accounts)  insertAccount.run([a.code, a.name, a.type, a.group])
 }
 
 module.exports = { getDb, closeDb, reopenDb, setDbPath, getDbPath }
