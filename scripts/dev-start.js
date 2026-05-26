@@ -42,7 +42,25 @@ try {
   warn(e.message?.split('\n')[0] || '')
 }
 
-// ── step 2: clear database lock files ────────────────────────────────────────
+// ── step 2: kill any lingering Electron processes ─────────────────────────────
+
+log('Checking for lingering Electron processes…')
+try {
+  if (process.platform === 'win32') {
+    // taskkill /F kills forcefully; /IM matches by image name; errors OK if none found
+    execSync('taskkill /F /IM electron.exe 2>nul', { stdio: 'pipe' })
+    ok('Killed electron.exe processes')
+  } else {
+    execSync('pkill -f "electron ." 2>/dev/null || true', { stdio: 'pipe' })
+    ok('Killed electron processes')
+  }
+  // Wait for OS to fully release file handles
+  const end = Date.now() + 1000; while (Date.now() < end) {}
+} catch {
+  ok('No Electron processes found — clean start.')
+}
+
+// ── step 3: clear database lock files ────────────────────────────────────────
 
 log('Clearing database lock files…')
 let cleared = 0
@@ -50,12 +68,23 @@ if (fs.existsSync(dbDir)) {
   for (const file of fs.readdirSync(dbDir)) {
     const isLock = LOCK_EXTENSIONS.some(ext => file.endsWith(ext))
     if (isLock) {
-      try {
-        fs.unlinkSync(path.join(dbDir, file))
-        ok(`Removed: database/${file}`)
-        cleared++
-      } catch (e) {
-        warn(`Could not remove database/${file}: ${e.message}`)
+      const filePath = path.join(dbDir, file)
+      let deleted = false
+      // Retry up to 5 times with 200ms gap (Windows releases handles slowly)
+      for (let t = 0; t < 5; t++) {
+        try { fs.unlinkSync(filePath); deleted = true; break }
+        catch { const e = Date.now() + 200; while (Date.now() < e) {} }
+      }
+      if (deleted) { ok(`Removed: database/${file}`); cleared++ }
+      else {
+        // Truncate instead — SQLite treats 0-byte lock file as unlocked
+        try {
+          fs.writeFileSync(filePath, Buffer.alloc(0))
+          ok(`Cleared (truncated): database/${file}`)
+          cleared++
+        } catch (e) {
+          warn(`Could not clear database/${file}: ${e.message}`)
+        }
       }
     }
   }

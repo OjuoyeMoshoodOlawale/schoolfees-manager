@@ -16,35 +16,42 @@ function getDb() {
   if (!db) {
     if (!dbPath) throw new Error('DB path not set')
 
-    // Clean up stale lock files left by crashed processes (dev restarts on Windows)
+    // ── Delete stale lock files (Windows: retry with delay if EPERM) ────────────
+    // journal_mode=DELETE leaves a .lock file; WAL leaves -wal and -shm.
+    // On Windows another process may briefly hold the handle — retry for 3 seconds.
     const lockFiles = [dbPath + '.lock', dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']
     for (const lf of lockFiles) {
-      try {
-        if (fs.existsSync(lf)) {
-          fs.unlinkSync(lf)
-          console.log('[DB] Removed stale lock file:', lf)
+      if (!fs.existsSync(lf)) continue
+      let deleted = false
+      for (let t = 0; t < 30; t++) {         // up to 3 seconds (30 × 100ms)
+        try { fs.unlinkSync(lf); deleted = true; console.log('[DB] Removed lock file:', path.basename(lf)); break }
+        catch (e) {
+          if (e.code === 'EPERM' || e.code === 'EBUSY') {
+            const end = Date.now() + 100; while (Date.now() < end) {}   // spin-wait 100ms
+          } else { break }
         }
-      } catch (e) {
-        console.warn('[DB] Could not remove lock file:', lf, e.message)
+      }
+      if (!deleted && fs.existsSync(lf)) {
+        // Truncate to 0 bytes instead of deleting — tricks SQLite into thinking it's fresh
+        try { fs.writeFileSync(lf, Buffer.alloc(0)); console.log('[DB] Cleared (truncated) lock file:', path.basename(lf)) }
+        catch (te) { console.warn('[DB] Could not clear lock file:', path.basename(lf), te.message) }
       }
     }
 
-    // Retry opening DB — on Windows, previous process may hold handle briefly
+    // ── Retry opening DB (Windows may hold handle briefly after previous close) ──
     let lastErr
-    for (let attempt = 0; attempt < 10; attempt++) {
+    for (let attempt = 0; attempt < 15; attempt++) {
       try {
         db = new Database(dbPath)
-        db.exec('PRAGMA journal_mode = DELETE')
+        db.exec('PRAGMA journal_mode = WAL')      // WAL: no .lock file, better concurrency
         db.exec('PRAGMA foreign_keys = ON')
         db.exec('PRAGMA synchronous = NORMAL')
-        db.exec('PRAGMA busy_timeout = 5000')
+        db.exec('PRAGMA busy_timeout = 10000')    // wait up to 10s for locks
         db.exec('PRAGMA locking_mode = NORMAL')
+        db.exec('PRAGMA wal_autocheckpoint = 1000')
         initSchema()
         migrateSchema()
         seedDefaults()
-        // In dev mode: ensure setup_complete is always '1' so the activation/setup
-        // wizard never shows after a Ctrl+C crash — dev machines shouldn't lose this.
-        // Use isPackaged (same logic as activation handler) — NODE_ENV may not be set.
         const _isDev = !require('electron').app.isPackaged
         if (_isDev) {
           db.prepare("INSERT OR REPLACE INTO app_state (key,value) VALUES ('setup_complete','1')").run([])
@@ -52,9 +59,10 @@ function getDb() {
         break
       } catch (e) {
         lastErr = e
+        if (db) { try { db.close() } catch {} }
         db = null
-        const end = Date.now() + 300
-        while (Date.now() < end) {}
+        const wait = 200 * (attempt + 1)          // progressive back-off: 200ms, 400ms…
+        const end = Date.now() + wait; while (Date.now() < end) {}
       }
     }
     if (!db) throw new Error('Cannot open database: ' + (lastErr?.message || 'unknown error') + '. Close any other instances of the app and try again.')
@@ -66,14 +74,19 @@ function getDb() {
 function closeDb() {
   if (db) {
     isClosing = true
-    try {
-      db.exec('PRAGMA wal_checkpoint(FULL)')  // flush any WAL data
-    } catch {}
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}  // flush + truncate WAL
+    try { db.exec('PRAGMA journal_mode = DELETE') }   catch {}  // switch back so no -wal/-shm left
     try { db.close() } catch {}
     db = null
-    // Small delay to let Windows release file handle
-    const end = Date.now() + 200
-    while (Date.now() < end) { /* spin */ }
+    // Give Windows time to release the file handle before caller tries to delete/copy
+    const end = Date.now() + 500
+    while (Date.now() < end) { /* spin-wait */ }
+    // Clean up any remaining WAL/SHM files
+    if (dbPath) {
+      for (const ext of ['.lock', '-wal', '-shm', '-journal']) {
+        try { const f = dbPath + ext; if (fs.existsSync(f)) fs.unlinkSync(f) } catch {}
+      }
+    }
     isClosing = false
   }
 }
