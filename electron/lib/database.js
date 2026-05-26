@@ -742,6 +742,17 @@ function migrateSchema() {
     "ALTER TABLE school_settings ADD COLUMN auto_send_receipt INTEGER DEFAULT 1",
     "ALTER TABLE school_settings ADD COLUMN auto_send_email_receipt INTEGER DEFAULT 1",
     "ALTER TABLE school_settings ADD COLUMN payroll_enabled INTEGER DEFAULT 0",
+    `CREATE TABLE IF NOT EXISTS system_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      handler TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      stack TEXT DEFAULT '',
+      context TEXT DEFAULT '',
+      severity TEXT NOT NULL DEFAULT 'error',
+      resolved INTEGER NOT NULL DEFAULT 0,
+      resolution TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    )`,
     "ALTER TABLE students ADD COLUMN boarding_type TEXT NOT NULL DEFAULT 'day'",
     "ALTER TABLE students ADD COLUMN parent_email TEXT DEFAULT ''",
     "ALTER TABLE school_settings ADD COLUMN inventory_enabled INTEGER DEFAULT 0",

@@ -65,6 +65,15 @@ function getFriendlyMessage(rawError, handlerName) {
 function logError({ handler, message, stack, context, severity = 'error' }) {
   try {
     const db = getDb()
+    // Ensure table exists (may not on first run before migration)
+    db.exec(`CREATE TABLE IF NOT EXISTS system_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      handler TEXT NOT NULL DEFAULT '', message TEXT NOT NULL,
+      stack TEXT DEFAULT '', context TEXT DEFAULT '',
+      severity TEXT NOT NULL DEFAULT 'error',
+      resolved INTEGER NOT NULL DEFAULT 0, resolution TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    )`)
     db.prepare(`INSERT INTO system_errors (handler, message, stack, context, severity)
       VALUES (?,?,?,?,?)`).run([
       handler  || '',
@@ -74,7 +83,6 @@ function logError({ handler, message, stack, context, severity = 'error' }) {
       severity,
     ])
   } catch {
-    // Never throw from error logger
     console.error('[ErrorHandler] Failed to log error to DB:', message)
   }
 }

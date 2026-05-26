@@ -23,7 +23,12 @@ export default function SystemErrorsPage() {
   const load = async () => {
     setLoading(true)
     try {
-      setErrors(await window.api.errorsList({ resolved: showResolved }))
+      const result = await window.api.errorsList({ resolved: showResolved })
+      setErrors(Array.isArray(result) ? result : [])
+    } catch(e) {
+      console.error('System errors load failed:', e)
+      setErrors([])
+      toast.error('Could not load error log: ' + e.message)
     } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [showResolved])
