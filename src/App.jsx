@@ -31,8 +31,14 @@ import ClassBillPrintPage from './pages/billing/ClassBillPrintPage'
 import PostPaymentPage    from './pages/payments/PostPaymentPage'
 import PaymentsPage       from './pages/payments/PaymentsPage'
 import DebtorsPage        from './pages/payments/DebtorsPage'
-import AccountReportPage  from './pages/reports/AccountReportPage'
-import BulkSmsPage        from './pages/reports/BulkSmsPage'
+import AccountReportPage   from './pages/reports/AccountReportPage'
+import BulkSmsPage         from './pages/reports/BulkSmsPage'
+import CollectionSummaryPage from './pages/reports/CollectionSummaryPage'
+import ClassFeeStatusPage  from './pages/reports/ClassFeeStatusPage'
+import StudentLedgerPage   from './pages/reports/StudentLedgerPage'
+import TermEndReportPage   from './pages/reports/TermEndReportPage'
+import PaymentAuditPage    from './pages/reports/PaymentAuditPage'
+import CommunicationsLogPage from './pages/reports/CommunicationsLogPage'
 import UsersPage          from './pages/users/UsersPage'
 import ImportStudentsPage    from './pages/import/ImportStudentsPage'
 import OpeningBalancesPage   from './pages/import/OpeningBalancesPage'
@@ -124,6 +130,12 @@ function MainApp() {
         <Route path="/debtors"                element={<DebtorsPage />} />
         <Route path="/reports/account"        element={<AccountReportPage />} />
         <Route path="/reports/sms"            element={<BulkSmsPage />} />
+        <Route path="/reports/collection"     element={<CollectionSummaryPage />} />
+        <Route path="/reports/class-status"   element={<ClassFeeStatusPage />} />
+        <Route path="/reports/student-ledger" element={<StudentLedgerPage />} />
+        <Route path="/reports/term-end"       element={<TermEndReportPage />} />
+        <Route path="/reports/audit"          element={<PaymentAuditPage />} />
+        <Route path="/reports/comms-log"      element={<CommunicationsLogPage />} />
         <Route path="/users"                  element={<UsersPage />} />
         <Route path="/settings"               element={<SettingsPage />} />
         <Route path="/dev-settings"           element={<DevSettingsPage />} />

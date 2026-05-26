@@ -14,15 +14,17 @@ const SCOPES = ['https://www.googleapis.com/auth/drive.file']
 const REDIRECT_PORT = 42813
 const REDIRECT_URI  = `http://localhost:${REDIRECT_PORT}`
 
-// Token store: simple JSON file next to the DB
-function getTokenPath() {
-  const dbPath = getDbPath()
-  return path.join(path.dirname(dbPath), 'gdrive_token.json')
+// ── Token/config storage — use app userData so credentials survive DB moves ───
+// Storing next to the DB caused "not connected" when DB was copied to another PC
+// because the new machine has a different path and the token file wasn't copied.
+function getCredentialDir() {
+  const { app } = require('electron')
+  const dir = path.join(app.getPath('userData'), 'gdrive')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
 }
-function getConfigPath() {
-  const dbPath = getDbPath()
-  return path.join(path.dirname(dbPath), 'gdrive_config.json')
-}
+function getTokenPath()  { return path.join(getCredentialDir(), 'gdrive_token.json') }
+function getConfigPath() { return path.join(getCredentialDir(), 'gdrive_config.json') }
 
 function loadConfig() {
   try { return JSON.parse(fs.readFileSync(getConfigPath(), 'utf8')) } catch { return null }
@@ -77,30 +79,36 @@ ipcMain.handle('gdrive:connect', async () => {
   })
 
   return new Promise((resolve) => {
-    // Spin up a local server to catch the redirect
+    let handled = false
+
     const server = http.createServer(async (req, res) => {
+      if (handled) return
+      handled = true
+
       const parsed = url.parse(req.url, true)
       const code   = parsed.query.code
+      const error  = parsed.query.error
 
-      res.writeHead(200, { 'Content-Type': 'text/html' })
-      res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
-        <h2 style="color:#16a34a">✅ SchoolFees Manager connected!</h2>
-        <p>You can close this tab and return to the app.</p>
-      </body></html>`)
-      server.close()
+      if (error || !code) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2 style="color:#dc2626">&#10060; Connection failed</h2>
+          <p>${error || 'No authorisation code returned.'}</p>
+          <p>You can close this tab and try again.</p>
+        </body></html>`)
+        server.close()
+        return resolve({ ok: false, error: error || 'No code returned from Google.' })
+      }
 
-      if (!code) return resolve({ ok: false, error: 'No code returned from Google.' })
-
+      // Process the code first, THEN send the success page
       try {
         const { tokens } = await oauth2.getToken(code)
         oauth2.setCredentials(tokens)
 
-        // Get user email
         const people = google.oauth2({ version: 'v2', auth: oauth2 })
         const info   = await people.userinfo.get()
         const email  = info.data.email
 
-        // Create a dedicated backup folder in Drive
         const drive    = google.drive({ version: 'v3', auth: oauth2 })
         const existing = await drive.files.list({
           q: "name='SchoolFees Manager Backups' and mimeType='application/vnd.google-apps.folder' and trashed=false",
@@ -118,8 +126,22 @@ ipcMain.handle('gdrive:connect', async () => {
         }
 
         saveToken({ ...tokens, email, folderId })
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2 style="color:#16a34a">&#10003; SchoolFees Manager connected!</h2>
+          <p>Signed in as <strong>${email}</strong></p>
+          <p>You can close this tab and return to the app.</p>
+        </body></html>`)
+        server.close()
         resolve({ ok: true, email, folderId })
       } catch (e) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2 style="color:#dc2626">&#10060; Connection error</h2>
+          <p>${e.message}</p>
+        </body></html>`)
+        server.close()
         resolve({ ok: false, error: e.message })
       }
     })

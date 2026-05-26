@@ -1,0 +1,158 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'react-toastify'
+import { Search, BookOpen, ChevronDown, ChevronRight } from 'lucide-react'
+import { PageHeader, Spinner } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
+import { fmtDate } from '../../lib/utils'
+
+export default function StudentLedgerPage() {
+  const { fmt } = useAuth()
+  const navigate = useNavigate()
+  const [students,  setStudents]  = useState([])
+  const [search,    setSearch]    = useState('')
+  const [selId,     setSelId]     = useState(null)
+  const [ledger,    setLedger]    = useState(null)
+  const [loading,   setLoading]   = useState(false)
+  const [expanded,  setExpanded]  = useState({})
+
+  useEffect(() => {
+    window.api.listStudents({}).then(setStudents)
+  }, [])
+
+  const loadLedger = async (id) => {
+    setSelId(id); setLoading(true)
+    try {
+      const data = await window.api.getStudentLedger({ student_id: id })
+      setLedger(data)
+      const exp = {}
+      data.history.forEach(t => { exp[t.term_id] = true })
+      setExpanded(exp)
+    } catch(e) { toast.error(e.message) }
+    finally { setLoading(false) }
+  }
+
+  const filtered = students.filter(s => {
+    const q = search.toLowerCase()
+    return `${s.first_name} ${s.last_name} ${s.reg_number}`.toLowerCase().includes(q)
+  })
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Student picker */}
+      <div className="lg:col-span-1">
+        <PageHeader title="Student Ledger" subtitle="Full payment history across all terms" />
+        <div className="card p-0 overflow-hidden">
+          <div className="p-3 border-b">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400"/>
+              <input className="form-input pl-8 text-sm" placeholder="Search student…" value={search} onChange={e => setSearch(e.target.value)}/>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
+            {filtered.slice(0, 100).map(s => (
+              <button key={s.id} onClick={() => loadLedger(s.id)}
+                className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${selId === s.id ? 'bg-blue-50 border-l-2 border-blue-500' : ''}`}>
+                <p className="text-sm font-medium text-gray-900">{s.last_name} {s.first_name}</p>
+                <p className="text-xs text-gray-400 font-mono">{s.reg_number}</p>
+              </button>
+            ))}
+            {filtered.length === 0 && <p className="text-center text-gray-400 text-sm py-8">No students found</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* Ledger view */}
+      <div className="lg:col-span-2">
+        {loading && <div className="card"><Spinner/></div>}
+        {!loading && !ledger && (
+          <div className="card text-center py-16 text-gray-400">
+            <BookOpen size={40} className="mx-auto mb-3 text-gray-200"/>
+            <p className="font-medium">Select a student to view their ledger</p>
+          </div>
+        )}
+        {!loading && ledger && (
+          <div className="space-y-4">
+            {/* Student summary */}
+            <div className="card">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="font-bold text-gray-900 text-lg">{ledger.student.last_name} {ledger.student.first_name}</h2>
+                  <p className="text-sm text-gray-500 font-mono">{ledger.student.reg_number}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">Total Paid (all terms)</p>
+                  <p className="text-2xl font-bold text-emerald-700">{fmt(ledger.totalPaid)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-100">
+                {[
+                  { label: 'Terms on record', value: ledger.history.length },
+                  { label: 'Total Billed', value: fmt(ledger.totalBilled), color: 'text-gray-900' },
+                  { label: 'Total Paid', value: fmt(ledger.totalPaid), color: 'text-emerald-700' },
+                ].map(m => (
+                  <div key={m.label} className="text-center">
+                    <p className="text-xs text-gray-400 uppercase tracking-wide">{m.label}</p>
+                    <p className={`text-base font-bold mt-0.5 ${m.color || 'text-gray-800'}`}>{m.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Per-term history */}
+            {ledger.history.map(term => (
+              <div key={term.term_id} className="card overflow-hidden p-0">
+                <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left"
+                  onClick={() => setExpanded(e => ({...e, [term.term_id]: !e[term.term_id]}))}>
+                  {expanded[term.term_id] ? <ChevronDown size={15} className="text-gray-400"/> : <ChevronRight size={15} className="text-gray-400"/>}
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm text-gray-900">{term.session_name} — {term.term_name}</p>
+                    <p className="text-xs text-gray-400">{term.class_name}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-emerald-700">{fmt(term.paid)}</p>
+                    <p className={`text-xs font-medium ${term.balance > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                      {term.balance > 0 ? `Owes ${fmt(term.balance)}` : 'Fully paid'}
+                    </p>
+                  </div>
+                </button>
+
+                {expanded[term.term_id] && (
+                  <div className="border-t border-gray-100 px-4 py-3 space-y-3">
+                    {/* Bills */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Fee Lines</p>
+                      {term.bills.length === 0
+                        ? <p className="text-xs text-gray-400">No bills generated</p>
+                        : term.bills.filter(b => b.status !== 'waived').map(b => (
+                          <div key={b.id} className="flex justify-between text-xs py-0.5">
+                            <span className="text-gray-600">{b.fee_item_name}</span>
+                            <span className="font-medium">{fmt(b.amount)}</span>
+                          </div>
+                        ))}
+                      <div className="flex justify-between text-xs font-bold border-t border-gray-100 pt-1 mt-1">
+                        <span>Subtotal</span><span>{fmt(term.billed)}</span>
+                      </div>
+                    </div>
+                    {/* Payments */}
+                    {term.payments.filter(p => !p.is_reversed && p.amount_paid > 0).length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Payments</p>
+                        {term.payments.filter(p => !p.is_reversed && p.amount_paid > 0).map(p => (
+                          <div key={p.id} className="flex justify-between text-xs py-0.5">
+                            <span className="text-gray-600">{fmtDate(p.payment_date)} · {p.receipt_number} · <span className="uppercase">{p.payment_method}</span></span>
+                            <span className="font-medium text-emerald-700">{fmt(p.amount_paid)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -82,6 +82,11 @@ contextBridge.exposeInMainWorld('api', {
   // ── Reports
   getDashboardData:   ()     => ipcRenderer.invoke('reports:dashboard'),
   getAccountReport:   (f)    => ipcRenderer.invoke('reports:account', f),
+  getCollectionSummary: (f)  => ipcRenderer.invoke('reports:collection-summary', f),
+  getClassFeeStatus:  (f)    => ipcRenderer.invoke('reports:class-fee-status', f),
+  getStudentLedger:   (f)    => ipcRenderer.invoke('reports:student-ledger', f),
+  getTermEndReport:   (f)    => ipcRenderer.invoke('reports:term-end', f),
+  getPaymentAudit:    (f)    => ipcRenderer.invoke('reports:payment-audit', f),
 
   // ── Auth
   login:              (d)    => ipcRenderer.invoke('auth:login', d),
@@ -109,11 +114,18 @@ contextBridge.exposeInMainWorld('api', {
   sendSms:            (d)    => ipcRenderer.invoke('sms:send', d),
   sendBulkSms:        (d)    => ipcRenderer.invoke('sms:bulk-send', d),
   getSmsLog:          (d)    => ipcRenderer.invoke('sms:log', d),
+  getSmsLogFull:      (d)    => ipcRenderer.invoke('sms:log-full', d),
+  smsResend:          (d)    => ipcRenderer.invoke('sms:resend', d),
+  smsUpdateResend:    (d)    => ipcRenderer.invoke('sms:update-phone-resend', d),
   testSms:            (d)    => ipcRenderer.invoke('sms:test', d),
   sendEmail:          (d)    => ipcRenderer.invoke('email:send', d),
   sendEmailReceipt:   (d)    => ipcRenderer.invoke('email:send-receipt', d),
   testEmail:          (d)    => ipcRenderer.invoke('email:test', d),
   getEmailLog:        (d)    => ipcRenderer.invoke('email:log', d),
+  getEmailLogFull:    (d)    => ipcRenderer.invoke('email:log-full', d),
+  emailResend:        (d)    => ipcRenderer.invoke('email:resend', d),
+  emailUpdateResend:  (d)    => ipcRenderer.invoke('email:update-address-resend', d),
+  carryCredit:        (d)    => ipcRenderer.invoke('payments:carry-credit', d),
 
   // ── Accounting
   listAccounts:       ()     => ipcRenderer.invoke('accounts:list'),

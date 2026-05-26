@@ -59,21 +59,106 @@ ipcMain.handle('payments:post', (_, data) => {
     }
   } catch(e) { /* non-critical — don't fail the payment */ }
 
-  // Auto SMS/Email if enabled (fire and forget - don't block payment posting)
-  try {
-    const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
-    const student  = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
-    if (settings?.sms_enabled && student?.parent_phone) {
-      const msg = `Dear ${student.parent_name || 'Parent'}, payment of ${amount_paid.toLocaleString('en-NG', {style:'currency',currency:'NGN'})} received for ${student.first_name} ${student.last_name}. Receipt: ${receipt_number}. - ${settings.school_name}`
-      db.prepare(`INSERT INTO sms_log (phone, student_id, message, status) VALUES (?,?,?,'pending')`)
-        .run([student.parent_phone, student_id, msg])
+  // ── Auto-send receipt via SMS and/or Email ──────────────────────────────────
+  // Fires asynchronously — never blocks the payment response
+  setImmediate(async () => {
+    try {
+      const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+      if (!settings?.auto_send_receipt) return
+
+      const student  = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
+      if (!student) return
+
+      const termRow  = db.prepare('SELECT t.*, s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?').get([term.id])
+      const classRow = db.prepare('SELECT c.name FROM student_status ss JOIN classes c ON c.id=ss.class_id WHERE ss.student_id=? AND ss.term_id=?').get([student_id, term.id])
+
+      // Calculate balance for receipt
+      const totalBilled = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM student_bills WHERE student_id=? AND term_id=? AND status NOT IN ('waived','frozen')").get([student_id, term.id])?.t || 0
+      const totalPaid   = db.prepare('SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid>0').get([student_id, term.id])?.t || 0
+      const balance     = Math.max(0, Number(totalBilled) - Number(totalPaid))
+
+      const currency    = settings.currency_symbol || '₦'
+      const fmtAmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      const schoolName  = settings.school_name || 'SchoolFees Manager'
+      const logoHtml    = settings.logo_path ? `<img src="cid:school_logo" style="max-height:60px;max-width:160px;display:block;margin:0 auto 8px;" alt="${schoolName}"/>` : ''
+
+      // ── Email Receipt ──────────────────────────────────────────────────────
+      if (settings.email_enabled && student.parent_email) {
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:20px}
+  .card{background:#fff;border-radius:12px;max-width:520px;margin:0 auto;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+  .header{text-align:center;border-bottom:3px solid #1e40af;padding-bottom:16px;margin-bottom:24px}
+  .school{font-size:20px;font-weight:bold;color:#1e3a8a;text-transform:uppercase}
+  .rtitle{font-size:13px;color:#6b7280;margin-top:4px}
+  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
+  .label{color:#6b7280}.value{font-weight:600;color:#111827}
+  .amt-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;padding:16px;margin:20px 0}
+  .amt{font-size:28px;font-weight:bold;color:#1d4ed8}
+  .bal-box{background:${balance>0?'#fef2f2':'#f0fdf4'};border:1px solid ${balance>0?'#fecaca':'#bbf7d0'};border-radius:8px;text-align:center;padding:12px;margin-top:8px}
+  .bal{font-size:18px;font-weight:bold;color:${balance>0?'#dc2626':'#16a34a'}}
+  .footer{text-align:center;font-size:12px;color:#9ca3af;margin-top:24px;border-top:1px solid #f3f4f6;padding-top:16px}
+</style></head><body>
+<div class="card">
+  <div class="header">
+    ${logoHtml}
+    <div class="school">${schoolName}</div>
+    <div class="rtitle">Payment Receipt &mdash; ${receipt_number}</div>
+  </div>
+  <div class="row"><span class="label">Student</span><span class="value">${student.last_name} ${student.first_name}</span></div>
+  <div class="row"><span class="label">Reg. Number</span><span class="value">${student.reg_number}</span></div>
+  <div class="row"><span class="label">Class</span><span class="value">${classRow?.name || '—'}</span></div>
+  <div class="row"><span class="label">Term</span><span class="value">${termRow?.name}, ${termRow?.session_name}</span></div>
+  <div class="row"><span class="label">Payment Date</span><span class="value">${payment_date}</span></div>
+  <div class="row"><span class="label">Payment Method</span><span class="value">${payment_method.toUpperCase()}</span></div>
+  ${reference ? `<div class="row"><span class="label">Reference</span><span class="value">${reference}</span></div>` : ''}
+  <div class="amt-box">
+    <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Amount Paid</div>
+    <div class="amt">${fmtAmt(amount_paid)}</div>
+  </div>
+  <div class="bal-box">
+    <div style="font-size:12px;color:#6b7280;margin-bottom:4px">${balance>0?'Outstanding Balance':'Account Status'}</div>
+    <div class="bal">${balance>0 ? fmtAmt(balance)+' remaining' : '&#10003; Fully Paid'}</div>
+  </div>
+  <div class="footer">
+    Thank you for your payment.<br>
+    This receipt was generated by ${schoolName}'s SchoolFees Manager.<br>
+    ${settings.phone ? 'Tel: '+settings.phone : ''}
+    ${settings.email_from ? ' &bull; '+settings.email_from : ''}
+  </div>
+</div></body></html>`
+
+        const { sendEmailReceipt } = require('./communications_helper')
+        const emailResult = await sendEmailReceipt(settings, {
+          to: student.parent_email,
+          subject: `Payment Receipt ${receipt_number} — ${schoolName}`,
+          html,
+          logoPath: settings.logo_path || null,
+        })
+        db.prepare(`INSERT INTO email_log (email, student_id, subject, body, status, error_reason, sent_at)
+          VALUES (?,?,?,?,?,?,datetime('now'))`)
+          .run([student.parent_email, student_id, `Receipt ${receipt_number}`, html,
+            emailResult.ok ? 'sent' : 'failed', emailResult.ok ? '' : (emailResult.error || 'Unknown error')])
+      }
+
+      // ── SMS Receipt ────────────────────────────────────────────────────────
+      if (settings.sms_enabled && student.parent_phone) {
+        const balMsg = balance > 0 ? ` Balance: ${fmtAmt(balance)}.` : ' FULLY PAID.'
+        const msg = `${schoolName}: Payment of ${fmtAmt(amount_paid)} received for ${student.first_name} ${student.last_name}. Receipt: ${receipt_number}. Date: ${payment_date}.${balMsg}`
+
+        const { sendSmsMessage } = require('./communications_helper')
+        const smsResult = await sendSmsMessage(settings, student.parent_phone, msg)
+        db.prepare(`INSERT INTO sms_log (phone, student_id, message, status, provider_ref, error_reason, sent_at)
+          VALUES (?,?,?,?,?,?,datetime('now'))`)
+          .run([student.parent_phone, student_id, msg,
+            smsResult.ok ? 'sent' : 'failed',
+            smsResult.ok ? (smsResult.ref || '') : '',
+            smsResult.ok ? '' : (smsResult.error || 'Unknown error')])
+      }
+    } catch(e) {
+      console.error('[receipt-send] Error sending receipt notifications:', e.message)
     }
-    if (settings?.email_enabled && student?.parent_email) {
-      db.prepare(`INSERT INTO email_log (email, student_id, subject, body, status) VALUES (?,?,?,?,'pending')`)
-        .run([student.parent_email, student_id, `Payment Receipt - ${receipt_number}`,
-          `Payment of ${amount_paid} received. Receipt No: ${receipt_number}`])
-    }
-  } catch(e) { /* non-critical — don't fail the payment */ }
+  })
 
   return { id: paymentId, receipt_number }
 })
@@ -200,8 +285,162 @@ ipcMain.handle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
     } catch(e) { /* non-critical */ }
 
     db.exec('COMMIT')
+
+    // Send reversal alert to parent asynchronously
+    setImmediate(async () => {
+      try {
+        const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+        if (!settings?.auto_send_receipt) return
+        const student  = db.prepare('SELECT * FROM students WHERE id=?').get([payment.student_id])
+        if (!student) return
+        const currency = settings.currency_symbol || '₦'
+        const fmtAmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+        const schoolName = settings.school_name || 'SchoolFees Manager'
+
+        // SMS reversal alert
+        if (settings.sms_enabled && student.parent_phone) {
+          const msg = `${schoolName}: REVERSAL NOTICE — Payment of ${fmtAmt(payment.amount_paid)} (Receipt ${payment.receipt_number}) for ${student.first_name} ${student.last_name} has been reversed. Ref: ${reversal_receipt}. Reason: ${reason || 'Not stated'}.`
+          const { sendSmsMessage } = require('./communications_helper')
+          const r = await sendSmsMessage(settings, student.parent_phone, msg)
+          db.prepare(`INSERT INTO sms_log (phone, student_id, message, status, provider_ref, error_reason, sent_at) VALUES (?,?,?,?,?,?,datetime('now'))`)
+            .run([student.parent_phone, student.id, msg, r.ok?'sent':'failed', r.ok?(r.ref||''):'', r.ok?'':(r.error||'')])
+        }
+        // Email reversal alert
+        if (settings.email_enabled && student.parent_email) {
+          const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff;border-radius:12px;border:2px solid #fca5a5">
+            <h2 style="color:#dc2626;text-align:center">&#9888; Payment Reversal Notice</h2>
+            <p style="color:#374151">Dear ${student.parent_name || 'Parent'},</p>
+            <p>A payment for <strong>${student.first_name} ${student.last_name}</strong> has been reversed:</p>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr><td style="padding:6px 0;color:#6b7280">Original Receipt</td><td style="font-weight:600">${payment.receipt_number}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Amount</td><td style="font-weight:600;color:#dc2626">${fmtAmt(payment.amount_paid)}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Reversal Receipt</td><td style="font-weight:600">${reversal_receipt}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Reason</td><td>${reason || 'Not stated'}</td></tr>
+            </table>
+            <p style="color:#6b7280;font-size:13px">If you have questions, contact ${schoolName}${settings.phone ? ' on '+settings.phone : ''}.</p>
+          </div>`
+          const { sendEmailReceipt } = require('./communications_helper')
+          const r = await sendEmailReceipt(settings, { to: student.parent_email, subject: `Payment Reversal Notice — ${reversal_receipt} | ${schoolName}`, html })
+          db.prepare(`INSERT INTO email_log (email, student_id, subject, body, status, error_reason, sent_at) VALUES (?,?,?,?,?,?,datetime('now'))`)
+            .run([student.parent_email, student.id, `Reversal ${reversal_receipt}`, html, r.ok?'sent':'failed', r.ok?'':(r.error||'')])
+        }
+      } catch(e) { console.error('[reversal-notify]', e.message) }
+    })
+
     return { ok: true, reversal_receipt }
   } catch(e) { db.exec('ROLLBACK'); throw e }
+})
+
+// ─── Resend failed SMS ────────────────────────────────────────────────────────
+ipcMain.handle('sms:resend', async (_, { log_id }) => {
+  const db  = getDb()
+  const log = db.prepare('SELECT * FROM sms_log WHERE id=?').get([log_id])
+  if (!log) return { ok: false, error: 'Log entry not found' }
+
+  const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+  const { sendSmsMessage } = require('./communications_helper')
+  const result = await sendSmsMessage(settings, log.phone, log.message)
+
+  db.prepare("UPDATE sms_log SET status=?, provider_ref=?, error_reason=?, sent_at=datetime('now') WHERE id=?")
+    .run([result.ok ? 'sent' : 'failed', result.ok ? (result.ref||'') : '', result.ok ? '' : (result.error||''), log_id])
+
+  return result
+})
+
+// ─── Resend failed Email ──────────────────────────────────────────────────────
+ipcMain.handle('email:resend', async (_, { log_id }) => {
+  const db  = getDb()
+  const log = db.prepare('SELECT * FROM email_log WHERE id=?').get([log_id])
+  if (!log) return { ok: false, error: 'Log entry not found' }
+
+  const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+  const { sendEmailReceipt } = require('./communications_helper')
+  const result = await sendEmailReceipt(settings, { to: log.email, subject: log.subject, html: log.body })
+
+  db.prepare("UPDATE email_log SET status=?, error_reason=?, sent_at=datetime('now') WHERE id=?")
+    .run([result.ok ? 'sent' : 'failed', result.ok ? '' : (result.error||''), log_id])
+
+  return result
+})
+
+// ─── Update contact and resend ────────────────────────────────────────────────
+ipcMain.handle('sms:update-phone-resend', async (_, { log_id, new_phone }) => {
+  const db = getDb()
+  const log = db.prepare('SELECT * FROM sms_log WHERE id=?').get([log_id])
+  if (!log) return { ok: false, error: 'Log not found' }
+
+  // Update student phone if linked to a student
+  if (log.student_id) {
+    db.prepare('UPDATE students SET phone=? WHERE id=?').run([new_phone, log.student_id])
+  }
+  db.prepare('UPDATE sms_log SET phone=? WHERE id=?').run([new_phone, log_id])
+
+  const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+  const { sendSmsMessage } = require('./communications_helper')
+  const result = await sendSmsMessage(settings, new_phone, log.message)
+  db.prepare("UPDATE sms_log SET status=?, error_reason=?, sent_at=datetime('now') WHERE id=?")
+    .run([result.ok?'sent':'failed', result.ok?'':(result.error||''), log_id])
+  return result
+})
+
+ipcMain.handle('email:update-address-resend', async (_, { log_id, new_email }) => {
+  const db = getDb()
+  const log = db.prepare('SELECT * FROM email_log WHERE id=?').get([log_id])
+  if (!log) return { ok: false, error: 'Log not found' }
+
+  if (log.student_id) {
+    db.prepare('UPDATE students SET parent_email=? WHERE id=?').run([new_email, log.student_id])
+  }
+  db.prepare('UPDATE email_log SET email=? WHERE id=?').run([new_email, log_id])
+
+  const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+  const { sendEmailReceipt } = require('./communications_helper')
+  const result = await sendEmailReceipt(settings, { to: new_email, subject: log.subject, html: log.body })
+  db.prepare("UPDATE email_log SET status=?, error_reason=?, sent_at=datetime('now') WHERE id=?")
+    .run([result.ok?'sent':'failed', result.ok?'':(result.error||''), log_id])
+  return result
+})
+
+// ─── Enhanced log queries (include error_reason) ──────────────────────────────
+ipcMain.handle('sms:log-full', (_, { limit=200, status } = {}) => {
+  const db = getDb()
+  const where = status ? `AND l.status=?` : ''
+  const params = status ? [limit, status] : [limit]
+  return db.prepare(`SELECT l.*, s.first_name, s.last_name, s.reg_number
+    FROM sms_log l LEFT JOIN students s ON s.id=l.student_id
+    WHERE 1=1 ${where}
+    ORDER BY l.id DESC LIMIT ?`).all(status ? [status, limit] : [limit])
+})
+
+ipcMain.handle('email:log-full', (_, { limit=200, status } = {}) => {
+  const db = getDb()
+  return db.prepare(`SELECT l.*, s.first_name, s.last_name, s.reg_number
+    FROM email_log l LEFT JOIN students s ON s.id=l.student_id
+    ${status ? 'WHERE l.status=?' : ''}
+    ORDER BY l.id DESC LIMIT ?`).all(status ? [status, limit] : [limit])
+})
+
+// ─── Overpayment: carry credit to next term ───────────────────────────────────
+// When paid > billed, the surplus is automatically carried forward as credit
+// to the student's next term when change-term or promote runs.
+// This is handled in the carryover:auto-compute handler (billing.js) which
+// already supports negative balances. This handler exposes manual credit carry.
+ipcMain.handle('payments:carry-credit', (_, { student_id, from_term_id, to_term_id }) => {
+  const db = getDb()
+  const billed  = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM student_bills WHERE student_id=? AND term_id=? AND status NOT IN ('waived','frozen')").get([student_id, from_term_id])?.t || 0
+  const paid    = db.prepare('SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid>0').get([student_id, from_term_id])?.t || 0
+  const credit  = Number(paid) - Number(billed)
+
+  if (credit <= 0) return { ok: false, error: 'No credit to carry — student has not overpaid' }
+
+  // Store as negative balance (credit) in previous_term_balance
+  const ex = db.prepare('SELECT id FROM previous_term_balance WHERE student_id=? AND to_term_id=?').get([student_id, to_term_id])
+  if (ex) {
+    db.prepare('UPDATE previous_term_balance SET balance_amount=? WHERE id=?').run([-credit, ex.id])
+  } else {
+    db.prepare('INSERT INTO previous_term_balance (student_id,from_term_id,to_term_id,balance_amount) VALUES (?,?,?,?)').run([student_id, from_term_id, to_term_id, -credit])
+  }
+  return { ok: true, credit }
 })
 
 // ─── Phase 4: Debtors ────────────────────────────────────────────────────────
@@ -255,7 +494,7 @@ ipcMain.handle('reports:dashboard', () => {
 
   const totalStudents = db.prepare("SELECT COUNT(*) as c FROM student_status WHERE term_id=? AND status='active'").get([term.id])?.c || 0
   const totalBilled   = db.prepare("SELECT COALESCE(SUM(sb.amount),0) as t FROM student_bills sb WHERE sb.term_id=? AND sb.status!='waived'").get([term.id])?.t || 0
-  const totalPaid     = db.prepare("SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE term_id=?").get([term.id])?.t || 0
+  const totalPaid     = db.prepare("SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0").get([term.id])?.t || 0
   const debtorCount   = db.prepare(`SELECT COUNT(DISTINCT student_id) as c FROM students s
     JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.status='active'
     WHERE (SELECT COALESCE(SUM(amount_paid),0) FROM payments WHERE student_id=s.id AND term_id=?) <
@@ -380,3 +619,193 @@ ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
 
 
 }
+
+// ─── Collection Summary — daily/weekly totals ─────────────────────────────────
+ipcMain.handle('reports:collection-summary', (_, { term_id, days = 30 } = {}) => {
+  const db  = getDb()
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid) return null
+
+  const daily = db.prepare(`
+    SELECT date(payment_date) as day,
+      COUNT(*) as transactions,
+      COALESCE(SUM(amount_paid), 0) as total,
+      payment_method
+    FROM payments
+    WHERE term_id=? AND is_reversed=0 AND amount_paid>0
+      AND date(payment_date) >= date('now', ? || ' days')
+    GROUP BY day, payment_method
+    ORDER BY day DESC
+  `).all([tid, `-${days}`])
+
+  const byDay = {}
+  for (const r of daily) {
+    if (!byDay[r.day]) byDay[r.day] = { day: r.day, total: 0, transactions: 0, methods: {} }
+    byDay[r.day].total        += Number(r.total)
+    byDay[r.day].transactions += Number(r.transactions)
+    byDay[r.day].methods[r.payment_method] = (byDay[r.day].methods[r.payment_method] || 0) + Number(r.total)
+  }
+
+  const topStudents = db.prepare(`
+    SELECT s.first_name, s.last_name, s.reg_number,
+      c.name as class_name,
+      COALESCE(SUM(p.amount_paid), 0) as total_paid
+    FROM payments p
+    JOIN students s ON s.id=p.student_id
+    LEFT JOIN student_status ss ON ss.student_id=p.student_id AND ss.term_id=p.term_id
+    LEFT JOIN classes c ON c.id=ss.class_id
+    WHERE p.term_id=? AND p.is_reversed=0 AND p.amount_paid>0
+    GROUP BY p.student_id ORDER BY total_paid DESC LIMIT 10
+  `).all([tid])
+
+  const grandTotal = db.prepare(
+    'SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0'
+  ).get([tid])?.t || 0
+
+  return { daily: Object.values(byDay).sort((a,b) => b.day.localeCompare(a.day)), topStudents, grandTotal: Number(grandTotal) }
+})
+
+// ─── Class Fee Status — all students in a class this term ─────────────────────
+ipcMain.handle('reports:class-fee-status', (_, { class_id, term_id }) => {
+  const db  = getDb()
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid || !class_id) return []
+
+  const students = db.prepare(`
+    SELECT s.id, s.first_name, s.last_name, s.reg_number, s.gender, s.boarding_type, s.entry_type
+    FROM students s
+    JOIN student_status ss ON ss.student_id=s.id
+    WHERE ss.term_id=? AND ss.class_id=? AND ss.status='active'
+    ORDER BY s.last_name, s.first_name
+  `).all([tid, class_id])
+
+  return students.map(s => {
+    const billed = db.prepare(
+      "SELECT COALESCE(SUM(amount),0) as t FROM student_bills WHERE student_id=? AND term_id=? AND status NOT IN ('waived','frozen')"
+    ).get([s.id, tid])?.t || 0
+
+    const paid = db.prepare(
+      'SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid>0'
+    ).get([s.id, tid])?.t || 0
+
+    const prevBal = db.prepare(
+      'SELECT COALESCE(SUM(balance_amount),0) as t FROM previous_term_balance WHERE student_id=? AND to_term_id=?'
+    ).get([s.id, tid])?.t || 0
+
+    const total    = Number(billed) + Number(prevBal)
+    const balance  = total - Number(paid)
+    const pct      = total > 0 ? Math.round((Number(paid) / total) * 100) : 0
+    const status   = balance <= 0 ? 'paid' : Number(paid) === 0 ? 'unpaid' : 'partial'
+
+    return { ...s, billed: Number(billed), prev_balance: Number(prevBal),
+      total_expected: total, total_paid: Number(paid), balance, pct, payment_status: status }
+  })
+})
+
+// ─── Student Ledger — full history across all terms ───────────────────────────
+ipcMain.handle('reports:student-ledger', (_, { student_id }) => {
+  const db = getDb()
+  if (!student_id) return null
+
+  const student = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
+  if (!student) return null
+
+  const terms = db.prepare(`
+    SELECT ss.term_id, t.name as term_name, s.name as session_name,
+      c.name as class_name, ss.status
+    FROM student_status ss
+    JOIN terms t ON t.id=ss.term_id
+    JOIN sessions s ON s.id=ss.session_id
+    JOIN classes c ON c.id=ss.class_id
+    WHERE ss.student_id=? ORDER BY ss.term_id
+  `).all([student_id])
+
+  const history = terms.map(term => {
+    const bills = db.prepare(`
+      SELECT sb.*, fi.name as fee_item_name
+      FROM student_bills sb
+      JOIN bill_config bc ON bc.id=sb.bill_config_id
+      JOIN fee_items fi ON fi.id=bc.fee_item_id
+      WHERE sb.student_id=? AND sb.term_id=?
+    `).all([student_id, term.term_id])
+
+    const payments = db.prepare(
+      'SELECT * FROM payments WHERE student_id=? AND term_id=? ORDER BY payment_date'
+    ).all([student_id, term.term_id])
+
+    const billed  = bills.reduce((s,b) => b.status === 'waived' ? s : s + Number(b.amount), 0)
+    const paid    = payments.filter(p => !p.is_reversed && p.amount_paid > 0).reduce((s,p) => s + Number(p.amount_paid), 0)
+    const prevBal = db.prepare(
+      'SELECT COALESCE(SUM(balance_amount),0) as t FROM previous_term_balance WHERE student_id=? AND to_term_id=?'
+    ).get([student_id, term.term_id])?.t || 0
+
+    return { ...term, bills, payments, billed, paid, prev_balance: Number(prevBal),
+      total_expected: billed + Number(prevBal), balance: billed + Number(prevBal) - paid }
+  })
+
+  const totalPaid   = history.reduce((s,t) => s + t.paid, 0)
+  const totalBilled = history.reduce((s,t) => s + t.billed, 0)
+
+  return { student, history, totalPaid, totalBilled }
+})
+
+// ─── Term End Report — full summary for current or selected term ──────────────
+ipcMain.handle('reports:term-end', (_, { term_id } = {}) => {
+  const db  = getDb()
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid) return null
+
+  const term = db.prepare(
+    'SELECT t.*, s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?'
+  ).get([tid])
+
+  const classes = db.prepare('SELECT * FROM classes WHERE is_active=1 ORDER BY level').all()
+
+  const classSummaries = classes.map(cls => {
+    const enrolled  = db.prepare("SELECT COUNT(*) as n FROM student_status WHERE term_id=? AND class_id=? AND status='active'").get([tid, cls.id])?.n || 0
+    const billed    = db.prepare("SELECT COALESCE(SUM(sb.amount),0) as t FROM student_bills sb JOIN student_status ss ON ss.student_id=sb.student_id AND ss.term_id=sb.term_id WHERE sb.term_id=? AND ss.class_id=? AND sb.status NOT IN ('waived','frozen')").get([tid, cls.id])?.t || 0
+    const paid      = db.prepare("SELECT COALESCE(SUM(p.amount_paid),0) as t FROM payments p JOIN student_status ss ON ss.student_id=p.student_id AND ss.term_id=p.term_id WHERE p.term_id=? AND ss.class_id=? AND p.is_reversed=0 AND p.amount_paid>0").get([tid, cls.id])?.t || 0
+    const fullPaid  = db.prepare("SELECT COUNT(DISTINCT s.id) as n FROM students s JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.class_id=? WHERE (SELECT COALESCE(SUM(amount_paid),0) FROM payments WHERE student_id=s.id AND term_id=? AND is_reversed=0) >= (SELECT COALESCE(SUM(amount),0) FROM student_bills WHERE student_id=s.id AND term_id=? AND status NOT IN ('waived','frozen'))").get([tid, cls.id, tid, tid])?.n || 0
+    if (enrolled === 0) return null
+    const balance = Number(billed) - Number(paid)
+    const pct     = Number(billed) > 0 ? Math.round((Number(paid)/Number(billed))*100) : 0
+    return { class_name: cls.name, enrolled, billed: Number(billed), paid: Number(paid), balance, pct, fully_paid: fullPaid, defaulters: enrolled - fullPaid }
+  }).filter(Boolean)
+
+  const methodBreakdown = db.prepare(`
+    SELECT payment_method, COUNT(*) as n, COALESCE(SUM(amount_paid),0) as total
+    FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0
+    GROUP BY payment_method ORDER BY total DESC
+  `).all([tid])
+
+  const totalBilled   = classSummaries.reduce((s,c) => s + c.billed, 0)
+  const totalPaid     = classSummaries.reduce((s,c) => s + c.paid, 0)
+  const totalStudents = classSummaries.reduce((s,c) => s + c.enrolled, 0)
+  const totalDefaulters = classSummaries.reduce((s,c) => s + c.defaulters, 0)
+
+  return { term, classSummaries, methodBreakdown, totalBilled, totalPaid, totalStudents, totalDefaulters,
+    balance: totalBilled - totalPaid, collectionPct: totalBilled > 0 ? Math.round((totalPaid/totalBilled)*100) : 0 }
+})
+
+// ─── Payment Audit Trail ──────────────────────────────────────────────────────
+ipcMain.handle('reports:payment-audit', (_, { term_id, include_reversed = true } = {}) => {
+  const db  = getDb()
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid) return []
+
+  return db.prepare(`
+    SELECT p.*,
+      s.first_name, s.last_name, s.reg_number,
+      c.name as class_name,
+      t.name as term_name, ses.name as session_name
+    FROM payments p
+    JOIN students s ON s.id=p.student_id
+    LEFT JOIN student_status ss ON ss.student_id=p.student_id AND ss.term_id=p.term_id
+    LEFT JOIN classes c ON c.id=ss.class_id
+    JOIN terms t ON t.id=p.term_id
+    JOIN sessions ses ON ses.id=t.session_id
+    WHERE p.term_id=?
+    ${include_reversed ? '' : 'AND p.is_reversed=0'}
+    ORDER BY p.created_at DESC
+  `).all([tid])
+})

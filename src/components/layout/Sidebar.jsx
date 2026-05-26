@@ -5,7 +5,8 @@ import {
   BookOpen, Settings, CloudUpload, ListChecks, SlidersHorizontal,
   Copy, Eye, Zap, Receipt, AlertTriangle, BarChart2, History,
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
-  ChevronDown, ChevronRight, FileSpreadsheet, Printer
+  ChevronDown, ChevronRight, FileSpreadsheet, Printer,
+  TrendingUp, Activity, Hash, MessageCircle
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -47,8 +48,14 @@ const NAV_GROUPS = [
   {
     section: 'Reports',
     items: [
-      { to: '/reports/account', icon: BarChart2, label: 'Account Report' },
-      { to: '/reports/sms',     icon: MessageSquare, label: 'Bulk SMS' },
+      { to: '/reports/account',        icon: BarChart2,      label: 'Account Report' },
+      { to: '/reports/term-end',       icon: FileText,       label: 'Term End Report' },
+      { to: '/reports/collection',     icon: TrendingUp,     label: 'Collection Summary' },
+      { to: '/reports/class-status',   icon: Users,          label: 'Class Fee Status' },
+      { to: '/reports/student-ledger', icon: BookOpen,       label: 'Student Ledger' },
+      { to: '/reports/audit',          icon: Shield,         label: 'Payment Audit' },
+      { to: '/reports/comms-log',      icon: MessageCircle,  label: 'Comms Log' },
+      { to: '/reports/sms',            icon: MessageSquare,  label: 'Bulk SMS' },
     ]
   },
   {

@@ -336,6 +336,12 @@ export default function SettingsPage() {
                 <span className="text-sm text-gray-700">Send email receipts and reports</span>
               </label>
             </Field>
+            <Field label="Auto-send Receipt on Payment">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_send_receipt')} />
+                <span className="text-sm text-gray-700">Automatically send receipt by email and SMS when a payment is posted</span>
+              </label>
+            </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="SMTP Host">
                 <input className="form-input" placeholder="smtp.gmail.com" {...register('email_smtp_host')} />
