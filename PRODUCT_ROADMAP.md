@@ -7,6 +7,19 @@
 
 ---
 
+
+## Decisions Locked (Do Not Re-ask)
+
+| Decision | Choice |
+|---|---|
+| Payroll statutory deductions | PAYE + Pension only. NHF/NSITF deferred to v2 |
+| Parent Portal | POSTPONED — not in Version 1 |
+| Multi-user LAN sync | YES — real-time sync between PCs on same network |
+| Biometric attendance hardware | YES — sell hardware + provide software bridge |
+| WhatsApp integration | POSTPONED — not in current roadmap |
+| USD pricing | NO — currency via Settings only |
+
+---
 ## Executive Summary
 
 SchoolFees Manager is a desktop-first (Electron + React) school financial management system targeting Nigerian secondary schools. The system currently covers student billing, fee collection, receipts, reporting, and a double-entry accounting module. This document defines the full expansion roadmap using ERP best practices, agile sprint planning, competitive analysis, legal requirements, and a tiered pricing model.
@@ -315,13 +328,18 @@ Sprint tasks:
 - [ ] Clean print for Account Report, Term End Report
 
 ### Phase 5 — Payroll Module
+**Decisions locked:** PAYE + Pension only. NHF/NSITF/NSITF deferred to v2.
+
 Sprint tasks:
-- [ ] Staff records (name, role, bank details, salary structure)
-- [ ] Monthly payroll run with PAYE calculation
-- [ ] Payslip generation (print + email)
-- [ ] Payroll report and bank schedule
-- [ ] Integration with accounting (salary = expense journal entry)
-- [ ] Leave management
+- [ ] Staff records (name, role, department, bank account, salary structure)
+- [ ] Salary components: basic salary, housing allowance, transport allowance
+- [ ] Deductions: PAYE tax (using Nigeria tax bands), pension (8% employee + 10% employer CRA 2011)
+- [ ] Monthly payroll run — approve → post → lock
+- [ ] Payslip generation (print + email to staff)
+- [ ] Payroll summary report and bank transfer schedule export
+- [ ] Integration with accounting module (salary posting = debit Salary Expense, credit Bank/Cash)
+- [ ] Leave management (basic — annual, sick, maternity)
+- [ ] NHF / NSITF — deferred to Version 2
 
 ### Phase 6 — Expense & Procurement Module
 Sprint tasks:
@@ -349,12 +367,8 @@ Sprint tasks:
 - [ ] School store POS integration
 - [ ] Inventory valuation reports
 
-### Phase 9 — Parent Portal
-Sprint tasks:
-- [ ] Simple web portal (hosted, linked to desktop DB via sync)
-- [ ] Parent login with student PIN
-- [ ] View balance, download receipt PDF
-- [ ] Push notification on payment confirmation
+### ~~Phase 9 — Parent Portal~~
+**POSTPONED** — not in Version 1 roadmap.
 
 ### Phase 10 — Multi-Branch & Enterprise
 Sprint tasks:
@@ -416,9 +430,9 @@ Agents receive: installer USB, demo licence, marketing materials, training certi
 
 4. **Biometric attendance**: Are you planning to sell the hardware yourself, or just provide the software bridge for any compatible device?
 
-5. **WhatsApp Business API**: Ready to proceed with Termii's WhatsApp channel (same integration as SMS), or wait?
+5. **WhatsApp Business API**: POSTPONED — not in current roadmap.
 
-6. **Pricing in USD**: For international schools or diaspora-owned schools in Nigeria, should USD pricing be available?
+6. **USD Pricing**: NO — currency is set via Settings only. No separate USD pricing tier.
 
 ---
 

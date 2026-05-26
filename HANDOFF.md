@@ -295,14 +295,14 @@ See `PRODUCT_ROADMAP.md` for full details, pricing, and agile breakdown.
 
 ---
 
-## 15. OPEN QUESTIONS (answer at start of next session)
+## 15. DECISIONS MADE (answered — do not re-ask)
 
-1. **Payroll — pension:** Include NHF + NSITF contributions or just PAYE for now?
-2. **Parent Portal:** Self-hosted per school or cloud-hosted by you?
-3. **Multi-user LAN sync:** Real-time between PCs on same network, or just user switching on one PC?
-4. **Biometric attendance:** Do you plan to sell the hardware yourself?
-5. **WhatsApp:** Proceed with Termii WhatsApp Business API now, or wait?
-6. **USD pricing:** Should international/diaspora schools get USD pricing option?
+1. **Payroll — pension:** PAYE + Pension deductions only. NHF and NSITF postponed to v2. Keep payroll lightweight.
+2. **Parent Portal:** POSTPONED — not in roadmap.
+3. **Multi-user LAN sync:** YES — real-time sync between PCs on same school network.
+4. **Biometric attendance:** YES — sell hardware + provide software bridge.
+5. **WhatsApp:** POSTPONED — not in current roadmap.
+6. **USD pricing:** NO — currency set via Settings only. No separate USD pricing tier.
 
 ---
 
