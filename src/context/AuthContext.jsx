@@ -49,7 +49,8 @@ export function AuthProvider({ children }) {
 
     try {
       setActivation(status.activation)
-      setSetupDone(status.setup_complete)
+      // setup is truly done only when BOTH the flag is set AND at least one admin user exists
+      setSetupDone(status.setup_complete && status.has_users)
       await loadCurrency()
       const settings = await window.api.getSettings()
       setAccounting(!!settings?.accounting_enabled)
