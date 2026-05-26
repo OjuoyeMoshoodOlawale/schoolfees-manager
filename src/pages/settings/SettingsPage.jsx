@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key } from 'lucide-react'
+import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
+import RegNumberTab from './RegNumberTab'
 
 const TABS = [
-  { id: 'school',   label: 'School Info',  icon: Building2 },
-  { id: 'currency', label: 'Currency',     icon: DollarSign },
-  { id: 'receipt',  label: 'Receipt',      icon: Printer },
-  { id: 'sms',      label: 'SMS',          icon: MessageSquare },
-  { id: 'email',    label: 'Email',        icon: Mail },
-  { id: 'accounting', label: 'Accounting',   icon: Key },
-  { id: 'backup',     label: 'Backup',       icon: Bell },
+  { id: 'school',       label: 'School Info',   icon: Building2 },
+  { id: 'registration', label: 'Registration',  icon: Hash },
+  { id: 'currency',     label: 'Currency',      icon: DollarSign },
+  { id: 'receipt',      label: 'Receipt',       icon: Printer },
+  { id: 'sms',          label: 'SMS',           icon: MessageSquare },
+  { id: 'email',        label: 'Email',         icon: Mail },
+  { id: 'accounting',   label: 'Accounting',    icon: Key },
+  { id: 'backup',       label: 'Backup',        icon: Bell },
 ]
 
 export default function SettingsPage() {
@@ -30,7 +32,7 @@ export default function SettingsPage() {
   const [unlockKey, setUnlockKey] = useState('')
   const [unlocking, setUnlocking] = useState(false)
 
-  const { register, handleSubmit, reset, watch, formState: { errors, isDirty } } = useForm()
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isDirty } } = useForm()
 
   useEffect(() => {
     async function init() {
@@ -209,6 +211,11 @@ export default function SettingsPage() {
               </Field>
             </div>
           </>
+        )}
+
+        {/* ── Registration Number Format ── */}
+        {tab === 'registration' && (
+          <RegNumberTab register={register} watch={watch} setValue={setValue} />
         )}
 
         {/* ── Currency ── */}

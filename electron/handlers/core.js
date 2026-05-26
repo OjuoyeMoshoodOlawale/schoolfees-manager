@@ -200,13 +200,76 @@ ipcMain.handle('students:delete', (_, id) => {
 })
 ipcMain.handle('students:next-reg', () => {
   const db = getDb()
-  const year = new Date().getFullYear()
-  const row = db.prepare(`SELECT reg_number FROM students WHERE reg_number LIKE ? ORDER BY id DESC LIMIT 1`)
-    .get(`%/${year}/%`)
-  if (!row) return `STU/${year}/001`
-  const parts = row.reg_number.split('/')
-  const next = String(parseInt(parts[2] || '0') + 1).padStart(3, '0')
-  return `STU/${year}/${next}`
+
+  const settings = db.prepare(
+    'SELECT reg_number_format, reg_number_prefix, reg_seq_reset FROM school_settings WHERE id=1'
+  ).get()
+
+  const format   = settings?.reg_number_format || '{PREFIX}/{YEAR}/{SEQ3}'
+  const prefix   = settings?.reg_number_prefix || 'STU'
+  const seqReset = settings?.reg_seq_reset     || 'year'
+
+  const now  = new Date()
+  const year4 = String(now.getFullYear())
+  const year2 = year4.slice(2)
+
+  // SESSION token: current academic session compact code
+  const currentTerm = db.prepare(
+    'SELECT s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.is_current=1'
+  ).get()
+  const sessionName    = currentTerm?.session_name || `${year4}/${String(Number(year4)+1)}`
+  const sessionCompact = (() => {
+    const m = sessionName.match(/(\d{2})(\d{2})\/(\d{2})(\d{2})/)
+    return m ? m[1] + m[2] + m[3] + m[4] : year4.slice(2) + String(Number(year4)+1).slice(2)
+  })()
+
+  // Sequence digit length from token
+  const seqMatch = format.match(/\{SEQ(\d)\}/)
+  const seqLen   = seqMatch ? parseInt(seqMatch[1]) : 3
+
+  // Build LIKE search pattern — for 'never' reset, use wildcard for year/session
+  // so we find the global max sequence across all time
+  const likePattern = format
+    .replace(/{PREFIX}/g,   prefix)
+    .replace(/{YEAR}/g,     seqReset === 'never' ? '____' : year4)
+    .replace(/{YY}/g,       seqReset === 'never' ? '__'   : year2)
+    .replace(/{SESSION}/g,  seqReset === 'never' ? '____' : sessionCompact)
+    .replace(/\{SEQ\d\}/g,  '%')
+
+  const rows = db.prepare(
+    'SELECT reg_number FROM students WHERE reg_number LIKE ? ORDER BY id DESC LIMIT 200'
+  ).all([likePattern])
+
+  // Extract the numeric sequence portion and find max
+  let maxSeq = 0
+  // Match seqLen digits that appear at the position where SEQ token was
+  // Build a regex from the format to extract sequence position
+  const regexStr = '^' + format
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex special chars (except our tokens)
+    .replace(/\\\{PREFIX\\\}/g,   '.+')
+    .replace(/\\\{YEAR\\\}/g,     '\\d{4}')
+    .replace(/\\\{YY\\\}/g,       '\\d{2}')
+    .replace(/\\\{SESSION\\\}/g,  '\\d{4}')
+    .replace(/\\\{SEQ\d\\\}/g,    `(\\d{${seqLen}})`) + '$'
+
+  const seqRegex = new RegExp(regexStr)
+  for (const row of rows) {
+    const m = row.reg_number.match(seqRegex)
+    if (m && m[1]) {
+      const n = parseInt(m[1])
+      if (n > maxSeq) maxSeq = n
+    }
+  }
+
+  const nextSeq  = String(maxSeq + 1).padStart(seqLen, '0')
+  const regNumber = format
+    .replace(/{PREFIX}/g,  prefix)
+    .replace(/{YEAR}/g,    year4)
+    .replace(/{YY}/g,      year2)
+    .replace(/{SESSION}/g, sessionCompact)
+    .replace(/\{SEQ\d\}/g, nextSeq)
+
+  return regNumber
 })
 ipcMain.handle('students:pick-photo', async () => {
   const result = await dialog.showOpenDialog({ filters: [{ name: 'Images', extensions: ['png','jpg','jpeg'] }], properties: ['openFile'] })

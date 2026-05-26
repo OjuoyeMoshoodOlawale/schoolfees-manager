@@ -18,7 +18,8 @@ module.exports = function registerSettingsHandlers(dbDir) {
       'receipt_footer','sms_enabled','sms_provider','sms_api_key','sms_sender_id',
       'email_enabled','email_smtp_host','email_smtp_port','email_smtp_user',
       'email_smtp_pass','email_from','auto_backup','backup_time',
-      'thermal_width','print_copies'
+      'thermal_width','print_copies',
+      'reg_number_format','reg_number_prefix','reg_seq_reset',
     ]
     const sets  = fields.map(f => `${f}=?`).join(',')
     const vals  = fields.map(f => data[f] !== undefined ? data[f] : null)

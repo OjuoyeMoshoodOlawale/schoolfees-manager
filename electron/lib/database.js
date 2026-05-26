@@ -396,6 +396,9 @@ function migrateSchema() {
     "ALTER TABLE payments ADD COLUMN reversal_reason TEXT DEFAULT ''",
     "ALTER TABLE payments ADD COLUMN reversed_by TEXT DEFAULT ''",
     "ALTER TABLE payments ADD COLUMN reversed_at TEXT",
+    "ALTER TABLE school_settings ADD COLUMN reg_number_format TEXT DEFAULT '{PREFIX}/{YEAR}/{SEQ3}'",
+    "ALTER TABLE school_settings ADD COLUMN reg_number_prefix TEXT DEFAULT 'STU'",
+    "ALTER TABLE school_settings ADD COLUMN reg_seq_reset TEXT DEFAULT 'year'",
   ]
   for (const sql of migrations) {
     try { db.exec(sql) } catch {} // ignore if column already exists
