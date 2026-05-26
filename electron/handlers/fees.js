@@ -1,6 +1,26 @@
 const { ipcMain } = require('electron')
 const { getDb } = require('../lib/database')
 
+function getAutoRecalc() {
+  try { return require('./billing').autoRecalcStudentBills } catch { return null }
+}
+
+// Recalculate bills for every active student in a class/term — called after config changes
+function recalcWholeClass(db, class_id, term_id) {
+  const autoRecalc = getAutoRecalc()
+  if (!autoRecalc) return
+  const students = db.prepare(
+    "SELECT student_id FROM student_status WHERE class_id=? AND term_id=? AND status='active'"
+  ).all([class_id, term_id])
+  for (const { student_id } of students) {
+    try {
+      db.exec('BEGIN')
+      autoRecalc(db, student_id, term_id)
+      db.exec('COMMIT')
+    } catch(e) { try { db.exec('ROLLBACK') } catch {} }
+  }
+}
+
 module.exports = function register_feesHandlers() {
 // ─── Phase 2: Fee Items & Bill Config ──────────────────────────────────────
 
@@ -65,15 +85,21 @@ ipcMain.handle('bill-config:upsert', (_, data) => {
     boarding_rule = 'all', is_compulsory = 1, is_active = 1
   } = data
   if (id) {
+    // Get class_id/term_id from existing record if not provided
+    const existing = db.prepare('SELECT class_id, term_id FROM bill_config WHERE id=?').get(id)
     db.prepare(`UPDATE bill_config SET amount=?, gender_rule=?, student_type_rule=?,
       boarding_rule=?, is_compulsory=?, is_active=? WHERE id=?`)
       .run([amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active, id])
+    // Recalculate all students in this class — amount or rules changed
+    recalcWholeClass(db, existing?.class_id || class_id, existing?.term_id || term_id)
     return { id }
   } else {
     const info = db.prepare(`INSERT INTO bill_config
       (term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active)
       VALUES (?,?,?,?,?,?,?,?,?)`)
       .run([term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active])
+    // New config line — add bills for eligible students immediately
+    recalcWholeClass(db, class_id, term_id)
     return { id: info.lastInsertRowid }
   }
 })

@@ -41,8 +41,7 @@ export default function StudentBillPage() {
   useEffect(() => { load() }, [load])
 
   // ── Auto-check: show banner if student has no bills but fee config exists ──
-  const hasBills       = summary?.bills?.length > 0
-  const noBillsBanner  = !loading && summary && !hasBills
+  const hasBills = summary?.bills?.length > 0
 
   const onRegenerateBills = async () => {
     if (!window.confirm(
@@ -136,23 +135,6 @@ export default function StudentBillPage() {
           </div>
         }
       />
-
-      {/* No-bills warning banner */}
-      {noBillsBanner && (
-        <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 flex items-start gap-3">
-          <span className="text-amber-500 text-xl mt-0.5">⚠️</span>
-          <div className="flex-1">
-            <p className="font-semibold text-amber-800 text-sm">No bills generated for this student yet.</p>
-            <p className="text-amber-700 text-xs mt-1">The bursar may have forgotten to generate bills for this class. Click <strong>↺ Generate Bills</strong> below to create them now based on this student's profile.</p>
-          </div>
-          {canEdit && (
-            <button className="btn-primary btn btn-sm shrink-0" onClick={onRegenerateBills} disabled={regenerating}>
-              <RefreshCw size={13} className={regenerating ? 'animate-spin' : ''} />
-              {regenerating ? 'Working…' : 'Generate Now'}
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">

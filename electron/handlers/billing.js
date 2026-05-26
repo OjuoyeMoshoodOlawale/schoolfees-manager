@@ -70,6 +70,29 @@ ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
   `).get([student_id, tid])
   student.class_name = statusRow?.class_name || ''
 
+  // ── Auto-generate bills on first access ──────────────────────────────────
+  // If this student has no bills yet for this term but fee config exists,
+  // generate them now silently. Bursar never needs to manually generate.
+  const existingBillCount = db.prepare(
+    'SELECT COUNT(*) as n FROM student_bills WHERE student_id=? AND term_id=?'
+  ).get([student_id, tid])?.n || 0
+
+  if (existingBillCount === 0 && statusRow?.class_id) {
+    const configCount = db.prepare(
+      'SELECT COUNT(*) as n FROM bill_config WHERE class_id=? AND term_id=? AND is_active=1'
+    ).get([statusRow.class_id, tid])?.n || 0
+    if (configCount > 0) {
+      try {
+        db.exec('BEGIN')
+        autoRecalcStudentBills(db, student_id, tid)
+        db.exec('COMMIT')
+      } catch(e) {
+        try { db.exec('ROLLBACK') } catch {}
+        console.warn('[auto-bill] Silent generation failed for student', student_id, e.message)
+      }
+    }
+  }
+
   const bills = db.prepare(`
     SELECT sb.*, fi.name as fee_item_name, bc.gender_rule, bc.student_type_rule, bc.boarding_rule
     FROM student_bills sb
@@ -177,6 +200,20 @@ ipcMain.handle('bills:list-class', (_, { class_id, term_id }) => {
   `).all([class_id, tid])
 
   return students.map(student => {
+    // Auto-generate if this student has no bills yet for this term
+    const hasBills = db.prepare(
+      'SELECT COUNT(*) as n FROM student_bills WHERE student_id=? AND term_id=?'
+    ).get([student.id, tid])?.n > 0
+    if (!hasBills) {
+      try {
+        db.exec('BEGIN')
+        autoRecalcStudentBills(db, student.id, tid)
+        db.exec('COMMIT')
+      } catch(e) {
+        try { db.exec('ROLLBACK') } catch {}
+      }
+    }
+
     const bills = db.prepare(`
       SELECT sb.*, fi.name as fee_item_name FROM student_bills sb
       JOIN bill_config bc ON bc.id=sb.bill_config_id

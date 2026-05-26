@@ -120,6 +120,18 @@ ipcMain.handle('students:create', (_, data) => {
     db.prepare(`INSERT INTO student_status (student_id,session_id,term_id,class_id,status,is_new_student)
       VALUES (?,?,?,?,?,?)`)
       .run([sid, session_id, term_id, class_id, 'active', entry_type === 'new' ? 1 : 0])
+    // Auto-generate bills immediately so bursar never has to remember
+    try {
+      const autoRecalc = getAutoRecalc()
+      if (autoRecalc) {
+        db.exec('BEGIN')
+        autoRecalc(db, sid, term_id)
+        db.exec('COMMIT')
+      }
+    } catch(e) {
+      try { db.exec('ROLLBACK') } catch {}
+      console.warn('[auto-bill] Could not generate bills for new student', sid, e.message)
+    }
   }
   return { id: sid }
 })
@@ -210,13 +222,24 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
   db.exec('BEGIN')
   try {
     for (const sid of studentIds) insert.run([sid, new_session_id, new_term_id, new_class_id])
-    // Students who have been promoted are no longer "new" — mark them returning
     if (studentIds.length > 0) {
       db.prepare(`UPDATE students SET entry_type='returning' WHERE id IN (${studentIds.map(()=>'?').join(',')}) AND entry_type='new'`)
         .run(studentIds)
     }
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
+
+  // Auto-generate bills for promoted students in new term
+  const autoRecalc = getAutoRecalc()
+  if (autoRecalc) {
+    for (const sid of studentIds) {
+      try {
+        db.exec('BEGIN')
+        autoRecalc(db, sid, new_term_id)
+        db.exec('COMMIT')
+      } catch(e) { try { db.exec('ROLLBACK') } catch {} }
+    }
+  }
   return { ok: true, count: studentIds.length }
 })
 
@@ -231,7 +254,6 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
   db.exec('BEGIN')
   try {
     for (const s of active) insert.run([s.student_id, toSessionId, toTermId, s.class_id])
-    // Also mark promoted students as returning
     const studentIds = active.map(s => s.student_id)
     if (studentIds.length > 0) {
       db.prepare(`UPDATE students SET entry_type='returning' WHERE id IN (${studentIds.map(()=>'?').join(',')}) AND entry_type='new'`)
@@ -239,6 +261,18 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
     }
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
+
+  // Auto-generate bills for all students in new term
+  const autoRecalc = getAutoRecalc()
+  if (autoRecalc) {
+    for (const s of active) {
+      try {
+        db.exec('BEGIN')
+        autoRecalc(db, s.student_id, toTermId)
+        db.exec('COMMIT')
+      } catch(e) { try { db.exec('ROLLBACK') } catch {} }
+    }
+  }
   return { ok: true, count: active.length }
 })
 
