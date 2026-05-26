@@ -285,6 +285,65 @@ Three modes, persisted in `localStorage`:
 - [ ] Email address in header of bill prints and statements
 
 ### Phase 5 — Payroll Module ✅ COMPLETE (Session 3)
+### Phase 6 — Expense & Procurement ✅ COMPLETE
+### Phase 8 — Inventory ✅ COMPLETE (locked behind INV-XXXX-XXXX)
+
+---
+
+## SESSION 4 FIXES (all committed and pushed)
+
+### Bug fixes
+- AccountReportPage: missing `printing` state declaration (crash on render)
+- SettingsPage: `printCleanHtml` not imported (crash on test print)
+- PaymentAuditPage: duplicate `fmtDate` import (Babel parse error)
+- Dashboard: `Shield` icon not imported (crash on render)
+
+### Windows-specific fixes
+- `localfile://` protocol handler: uses `pathToFileURL()` — handles spaces in paths
+- Logo/photo paths: forward slashes stored in DB (`settings:get`, `pick-logo`, `pick-photo`)
+- `schoolfees.db.lock` EISDIR: handles lock path being a DIRECTORY (not a file)
+  → `rmSync({ recursive: true })` used; dev-start.js updated same way
+- DB switched to WAL journal mode — no more `.lock` file created on open
+- `cleanDbLock()` runs on startup and every quit path (SIGINT, SIGTERM, window-all-closed)
+- `dev-start.js`: kills lingering `electron.exe` before starting, retries lock deletion 5×
+
+### DB security (3 layers)
+- Production DB moved to `AppData\Roaming\SchoolFees Manager\data\` (was in resources/)
+- Old DB auto-migrated on first launch after update
+- NTFS `icacls` restricts data/ folder to current Windows user only
+- Integrity seal: SHA-256 hash written on close, verified on open
+- Machine-specific AES key ready for column encryption
+- `application_id = 0x5346454D` prevents generic SQLite tools from opening file
+
+### student_bills migration
+- Combined orphan cleanup + migration into single try/catch
+- `INSERT OR IGNORE` prevents UNIQUE constraint failure on repeated migration attempts
+- No longer spams `[DB] student_bills migration skipped` on every startup
+
+### Error boundary
+- `ErrorBoundary` class component wraps entire Layout
+- Any page crash shows recovery screen (Try Again + Go to Dashboard) instead of blank page
+
+### Receipt print styling
+- `buildReceiptHtml` in communications.js now matches ReceiptModal styling exactly
+  (card layout, rounded corners, blue amount box, green/red balance box)
+- PaymentsPage `handlePrint` uses same card-based HTML
+
+### exportToExcel
+- Wrapped in try/catch — errors no longer freeze form state
+
+### Phase 7 — Attendance
+- Schema added (attendance_records, staff_attendance tables) but pages NOT built yet
+- Skipped per decision to keep attendance for later
+
+### Phase 8 lock (same pattern as Accounting + Payroll)
+- INV-XXXX-XXXX activation key
+- Inventory section hidden in sidebar until unlocked
+- InventoryTab in Settings, key generator in DevSettings
+
+---
+
+### Phase 5 — Payroll Module ✅ COMPLETE (Session 3)
 
 **Decision log:**
 - PAYE: ✅ Implemented (FIRS 2024 bands with CRA)
