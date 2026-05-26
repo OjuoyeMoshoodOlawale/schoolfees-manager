@@ -1,5 +1,6 @@
 const { ipcMain, dialog } = require('electron')
 const { getDb, getDbPath } = require('../lib/database')
+const { safeHandle, logError } = require('./errorHandler')
 const path = require('path')
 const fs   = require('fs')
 

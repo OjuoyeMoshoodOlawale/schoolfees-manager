@@ -63,6 +63,7 @@ const effectiveDbPath = (() => {
 setDbPath(effectiveDbPath)
 
 // ─── Register All Handler Modules ─────────────────────────────────────────────
+require('./handlers/errorHandler')  // load first — safeHandle must exist before other handlers use it
 require('./handlers/settings')(dbDir)
 require('./handlers/backup')()
 require('./handlers/gdrive')()
@@ -77,7 +78,6 @@ require('./handlers/accounting')()
 require('./handlers/payroll')
 require('./handlers/expenses')
 require('./handlers/inventory')
-require('./handlers/errorHandler')  // must be last — provides safeHandle wrapper
 
 // ── Start auto-backup scheduler ───────────────────────────────────────────────
 const { startScheduler } = require('./lib/scheduler')
