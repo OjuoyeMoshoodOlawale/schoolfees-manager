@@ -7,7 +7,7 @@ import {
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
-  Briefcase, UserCog, Play, Minus, AlertTriangle,
+  Briefcase, UserCog, Play, Minus,
   ShoppingBag, Tag, Truck, PieChart,
   Package, BarChart2 as BarChartIcon, Archive
 } from 'lucide-react'
