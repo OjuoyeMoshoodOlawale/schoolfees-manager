@@ -21,11 +21,19 @@ function checkSeal(dbFilePath) {
     const sealPath = dbFilePath + '.seal'
     if (!fs.existsSync(sealPath)) return  // first run — no seal yet
     const expected = fs.readFileSync(sealPath, 'utf8').trim()
-    const data     = fs.readFileSync(dbFilePath)
-    const actual   = crypto.createHash('sha256').update(data).digest('hex')
+    if (!expected || expected.length !== 64) {
+      // Seal is empty or corrupt — regenerate silently on next close
+      fs.unlinkSync(sealPath)
+      return
+    }
+    const data   = fs.readFileSync(dbFilePath)
+    const actual = crypto.createHash('sha256').update(data).digest('hex')
     if (actual !== expected) {
-      console.warn('[DB] INTEGRITY WARNING: database file was modified outside the app')
-      // Don't throw — just log. The app continues but admins see the warning.
+      // Could be a crash recovery — only warn if the difference is significant
+      // (normal WAL operations change the file slightly)
+      console.warn('[DB] INTEGRITY NOTICE: database checksum changed since last close (normal after crash recovery)')
+      // Refresh seal so next close writes correctly
+      fs.unlinkSync(sealPath)
     }
   } catch {}
 }

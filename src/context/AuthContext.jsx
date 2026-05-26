@@ -25,17 +25,39 @@ export function AuthProvider({ children }) {
   }, [])
 
   const checkStatus = useCallback(async () => {
+    // Retry up to 8 times with back-off — DB may be locked briefly on startup
+    let status = null
+    let lastErr = null
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        status = await window.api.getActivationStatus()
+        lastErr = null
+        break
+      } catch (e) {
+        lastErr = e
+        // Wait progressively longer: 300ms, 600ms, 900ms...
+        await new Promise(r => setTimeout(r, 300 * (attempt + 1)))
+      }
+    }
+
+    if (!status) {
+      console.error('Status check failed after retries:', lastErr)
+      // Keep loading=true and retry once more after 1s — prevents flash to ActivationScreen
+      setTimeout(() => checkStatus(), 1000)
+      return
+    }
+
     try {
-      const status = await window.api.getActivationStatus()
       setActivation(status.activation)
       setSetupDone(status.setup_complete)
-      // Load currency
       await loadCurrency()
-      // Load accounting enabled flag
       const settings = await window.api.getSettings()
       setAccounting(!!settings?.accounting_enabled)
+      // Load payroll and inventory enabled flags
+      setPayrollEnabled?.(!!settings?.payroll_enabled)
+      setInventoryEnabled?.(!!settings?.inventory_enabled)
     } catch (e) {
-      console.error('Status check failed:', e)
+      console.error('Settings load failed:', e)
     } finally {
       setLoading(false)
     }

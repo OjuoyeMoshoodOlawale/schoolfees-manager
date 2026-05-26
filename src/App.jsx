@@ -69,10 +69,20 @@ function AuthGate() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-400 text-sm">Loading SchoolFees Manager…</p>
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 mx-auto">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+              <circle cx="32" cy="32" r="28" stroke="#1e40af" strokeWidth="4" strokeOpacity="0.2"/>
+              <path d="M32 4 A28 28 0 0 1 60 32" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round"
+                className="animate-spin origin-center" style={{transformOrigin:'32px 32px',animation:'spin 1s linear infinite'}}/>
+            </svg>
+          </div>
+          <div>
+            <p className="text-white font-semibold text-lg">SchoolFees Manager</p>
+            <p className="text-slate-400 text-sm mt-1">Starting up, please wait…</p>
+          </div>
         </div>
+        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
       </div>
     )
   }

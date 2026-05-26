@@ -150,15 +150,22 @@ function createWindow() {
   // Register safe local-file protocol: localfile:///path → serves file from disk
   protocol.handle('localfile', (request) => {
     const { pathToFileURL } = require('url')
-    // Strip scheme — Electron percent-encodes the URL so decode first
-    let raw = decodeURIComponent(request.url.replace(/^localfile:\/\//, ''))
-    // Remove leading slash before Windows drive letter: /C:/path → C:/path
-    if (/^\/[A-Za-z]:/.test(raw)) raw = raw.slice(1)
-    // Normalise backslashes → forward slashes
-    raw = raw.replace(/\\/g, '/')
-    // Use pathToFileURL which handles spaces and special chars correctly
-    const fileUrl = pathToFileURL(raw).href
-    return net.fetch(fileUrl)
+    try {
+      // Electron may or may not percent-encode the URL — handle both cases
+      let raw = request.url.replace(/^localfile:\/\//, '')
+      // Decode only if it looks encoded (contains %)
+      if (raw.includes('%')) raw = decodeURIComponent(raw)
+      // Remove leading slash before Windows drive letter: /C:/path → C:/path
+      if (/^\/[A-Za-z]:/.test(raw)) raw = raw.slice(1)
+      // Normalise backslashes → forward slashes
+      raw = raw.replace(/\\/g, '/')
+      // Use pathToFileURL which correctly handles spaces and special chars
+      const fileUrl = pathToFileURL(raw).href
+      return net.fetch(fileUrl)
+    } catch (e) {
+      console.warn('[localfile] Failed to serve:', request.url, e.message)
+      return new Response('Not found', { status: 404 })
+    }
   })
 
   win = new BrowserWindow({
@@ -183,13 +190,25 @@ function createWindow() {
 
 // ─── DB lock file cleanup ─────────────────────────────────────────────────────
 // SQLite WAL mode leaves a .lock file that prevents reopening after a crash.
-// Delete it on startup (safe — if the DB was properly closed the lock is empty)
-// and on every quit path.
+// Delete lock files/dirs on startup and every quit path.
 function cleanDbLock() {
-  const lockFile = dbPath + '.lock'
-  try { if (fs.existsSync(lockFile)) { fs.unlinkSync(lockFile); console.log('[main] Removed stale DB lock file') } } catch {}
+  const exts = ['.lock', '-journal', '-wal', '-shm']
+  for (const ext of exts) {
+    const lockPath = dbPath + ext
+    try {
+      if (!fs.existsSync(lockPath)) continue
+      const stat = fs.statSync(lockPath)
+      if (stat.isDirectory()) {
+        fs.rmSync(lockPath, { recursive: true, force: true })
+        console.log('[main] Removed lock directory:', ext)
+      } else {
+        fs.unlinkSync(lockPath)
+        console.log('[main] Removed lock file:', ext)
+      }
+    } catch {}
+  }
 }
-cleanDbLock() // Run immediately on startup
+cleanDbLock() // Run immediately on startup — before DB opens
 
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => {
