@@ -20,8 +20,10 @@ export default function StudentForm() {
   const [currentTerm, setCurrentTerm] = useState(null)
   const [studentCount, setStudentCount] = useState(0)
 
+  const DEFAULTS = { gender: 'M', entry_type: 'new', boarding_type: 'day' }
+
   const { register, handleSubmit, reset, watch, formState: { errors, isDirty } } = useForm({
-    defaultValues: { gender: 'M', entry_type: 'new', boarding_type: 'day' }
+    defaultValues: DEFAULTS
   })
 
   useEffect(() => {
@@ -47,10 +49,14 @@ export default function StudentForm() {
           const currentStatus = statuses?.find(s => s.term_id === term.id)
           if (currentStatus) classId = String(currentStatus.class_id)
         }
-        reset({ ...student, class_id: classId })
+        reset({ ...DEFAULTS, ...student, class_id: classId,
+          boarding_type: student.boarding_type || 'day',
+          gender: student.gender || 'M',
+          entry_type: student.entry_type || 'new',
+        })
       } else {
         const regNo = await window.api.nextRegNumber()
-        reset(prev => ({ ...prev, reg_number: regNo }))
+        reset({ ...DEFAULTS, reg_number: regNo })
       }
       setLoading(false)
     }

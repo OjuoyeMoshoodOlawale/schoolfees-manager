@@ -124,15 +124,20 @@ ipcMain.handle('students:get', (_, id) => {
 })
 safeHandle('students:create', (_, data) => {
   const db = getDb()
-  const { first_name, last_name, other_names='', gender, date_of_birth='', phone='',
-    parent_name='', parent_phone='', address='', photo_path='', entry_type='new',
-    boarding_type='day', reg_number, class_id, session_id, term_id } = data
+  const {
+    first_name, last_name, other_names='', gender='M', date_of_birth='', phone='',
+    parent_name='', parent_phone='', parent_email='', address='', photo_path='',
+    entry_type='new', boarding_type='day', reg_number, class_id, session_id, term_id
+  } = data
   const info = db.prepare(`INSERT INTO students
     (reg_number,first_name,last_name,other_names,gender,date_of_birth,phone,
-    parent_name,parent_phone,address,photo_path,entry_type,boarding_type)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run([reg_number,first_name,last_name,other_names,gender,date_of_birth],
-      phone,parent_name,parent_phone,address,photo_path,entry_type,boarding_type)
+    parent_name,parent_phone,parent_email,address,photo_path,entry_type,boarding_type)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run([reg_number, first_name, last_name, other_names,
+          gender, date_of_birth, phone,
+          parent_name, parent_phone, parent_email,
+          address, photo_path,
+          entry_type || 'new', boarding_type || 'day'])
   const sid = info.lastInsertRowid
   // Create initial student_status if term provided
   if (class_id && term_id && session_id) {
@@ -156,13 +161,20 @@ safeHandle('students:create', (_, data) => {
 })
 safeHandle('students:update', (_, { id, class_id, parent_email='', ...data }) => {
   const db = getDb()
-  const { first_name, last_name, other_names='', gender, date_of_birth='', phone='',
-    parent_name='', parent_phone='', address='', photo_path='', entry_type, boarding_type='day' } = data
+  const {
+    first_name, last_name, other_names='', gender='M', date_of_birth='', phone='',
+    parent_name='', parent_phone='', address='', photo_path='',
+    entry_type='new', boarding_type='day'
+  } = data
   db.prepare(`UPDATE students SET first_name=?,last_name=?,other_names=?,gender=?,
     date_of_birth=?,phone=?,parent_name=?,parent_phone=?,parent_email=?,address=?,photo_path=?,entry_type=?,boarding_type=?
     WHERE id=?`)
-    .run([first_name,last_name,other_names,gender,date_of_birth,phone,
-      parent_name,parent_phone,parent_email,address,photo_path,entry_type,boarding_type,id])
+    .run([first_name, last_name, other_names,
+          gender || 'M', date_of_birth, phone,
+          parent_name, parent_phone, parent_email,
+          address, photo_path,
+          entry_type || 'new', boarding_type || 'day',
+          id])
   // Update class assignment for current term if class_id provided
   if (class_id) {
     const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
