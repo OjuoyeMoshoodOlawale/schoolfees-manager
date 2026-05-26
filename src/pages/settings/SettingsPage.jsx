@@ -217,10 +217,11 @@ export default function SettingsPage() {
             <h3 className="text-sm font-semibold text-gray-700">Currency Settings</h3>
             <p className="text-xs text-gray-400">All amounts in the application will use this currency.</p>
             <Field label="Currency Preset">
-              <select className="form-select" onChange={e => {
+              <select className="form-select" value={watch('currency_code') || ''} onChange={e => {
                 const c = currencies.find(x => x.code === e.target.value)
                 if (c) { reset({ ...watch(), currency_symbol: c.symbol, currency_code: c.code, currency_name: c.name }) }
               }}>
+                <option value="">— Select a preset —</option>
                 {currencies.map(c => <option key={c.code} value={c.code}>{c.name} ({c.symbol})</option>)}
               </select>
             </Field>

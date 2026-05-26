@@ -1,76 +1,64 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import {
-  ArrowLeft, Plus, Trash2, Receipt,
-  TrendingDown, TrendingUp, Printer, FileText
+  ArrowLeft, Receipt, Printer, FileText, RefreshCw
 } from 'lucide-react'
-import { PageHeader, Modal, Confirm, Field, Spinner } from '../../components/ui'
+import { PageHeader, Confirm, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
-import { fmtDate } from '../../lib/utils'
+import { fmtDate, buildBillSlipHtml, printCleanHtml } from '../../lib/utils'
+import AdjustmentModal from './AdjustmentModal'
 
 export default function StudentBillPage() {
-  const { id } = useParams()
+  const { id }   = useParams()
   const navigate = useNavigate()
   const { fmt, canEdit } = useAuth()
-  const [summary, setSummary]       = useState(null)
-  const [payments, setPayments]     = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [showAdjModal, setShowAdjModal] = useState(false)
-  const [deleteAdj, setDeleteAdj]   = useState(null)
-  const [saving, setSaving]         = useState(false)
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm({
-    defaultValues: { type: 'discount', calc_mode: 'fixed', amount: '', reason: '' }
-  })
-  const adjType  = watch('type')
-  const calcMode = watch('calc_mode')
+  const [summary,      setSummary]      = useState(null)
+  const [payments,     setPayments]     = useState([])
+  const [school,       setSchool]       = useState(null)
+  const [currentTerm,  setCurrentTerm]  = useState(null)
+  const [loading,      setLoading]      = useState(true)
+  const [showAdj,      setShowAdj]      = useState(false)
+  const [deleteAdj,    setDeleteAdj]    = useState(null)
+  const [regenerating, setRegenerating] = useState(false)
+  const [printing,     setPrinting]     = useState(false)
 
   const load = useCallback(async () => {
-    const [data, pmts] = await Promise.all([
+    const [data, pmts, s, term] = await Promise.all([
       window.api.getStudentBillSummary({ student_id: Number(id) }),
       window.api.listPayments({ student_id: Number(id) }),
+      window.api.getSettings(),
+      window.api.getCurrentTerm(),
     ])
     setSummary(data)
     setPayments(pmts || [])
+    setSchool(s)
+    setCurrentTerm(term)
     setLoading(false)
   }, [id])
 
   useEffect(() => { load() }, [load])
 
-  const onAddAdj = async (data) => {
-    setSaving(true)
-    try {
-      await window.api.createAdjustment({
-        student_id: Number(id),
-        type: data.type,
-        calc_mode: data.calc_mode,
-        amount: Number(data.amount),
-        reason: data.reason,
-      })
-      toast.success('Adjustment added')
-      setShowAdjModal(false)
-      reset()
-      load()
-    } catch (e) { toast.error(e.message || 'Failed') }
-    finally { setSaving(false) }
-  }
-
-  const onDeleteAdj = async () => {
-    await window.api.deleteAdjustment(deleteAdj.id)
-    toast.success('Adjustment removed')
-    load()
-  }
+  // ── Auto-check: show banner if student has no bills but fee config exists ──
+  const hasBills       = summary?.bills?.length > 0
+  const noBillsBanner  = !loading && summary && !hasBills
 
   const onRegenerateBills = async () => {
-    if (!window.confirm('This will delete all pending bills for this student and regenerate based on their current profile (gender, boarding type, entry type). Any payments must be reversed first. Continue?')) return
+    if (!window.confirm(
+      hasBills
+        ? 'Re-check this student\'s bills against their current profile (gender, boarding, entry type)?\n\nExisting payments are safe — only missing or obsolete pending lines are updated.'
+        : 'This student has no bills yet. Generate bills based on their current profile?'
+    )) return
+    setRegenerating(true)
     try {
       const result = await window.api.regenerateStudentBills({ student_id: Number(id) })
-      toast.success(result.message || 'Bills regenerated successfully')
+      toast.success(result.message || 'Bills updated')
       load()
     } catch (e) {
       toast.error(e.message || 'Regeneration failed')
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -80,12 +68,40 @@ export default function StudentBillPage() {
     load()
   }
 
-  const handlePrint = () => window.print()
+  const onDeleteAdj = async () => {
+    await window.api.deleteAdjustment(deleteAdj.id)
+    toast.success('Adjustment removed')
+    load()
+  }
+
+  const handlePrint = async () => {
+    if (!summary) return
+    setPrinting(true)
+    try {
+      const sessionName = currentTerm?.session_name || ''
+      const termName    = currentTerm?.name          || ''
+      const className   = summary.student?.class_name || ''
+
+      const html = buildBillSlipHtml({
+        ...summary,
+        school,
+        sessionName,
+        termName,
+        className,
+      })
+      const r = await printCleanHtml(html)
+      if (r && !r.ok) toast.error('Print failed: ' + (r.error || 'Unknown error'))
+    } catch(e) {
+      toast.error('Print error: ' + e.message)
+    } finally {
+      setPrinting(false)
+    }
+  }
 
   if (loading) return <Spinner />
   if (!summary) return (
     <div className="card text-center py-10">
-      <p className="text-gray-400">Student not found or no bills generated yet.</p>
+      <p className="text-gray-400">Student not found or no data available.</p>
       <button className="btn-secondary btn mt-4" onClick={() => navigate(-1)}>← Back</button>
     </div>
   )
@@ -93,55 +109,58 @@ export default function StudentBillPage() {
   const { student, bills, adjustments, bill_total, prev_balance,
           adj_total, total_expected, total_paid, balance } = summary
 
-  const pct = total_expected > 0 ? Math.min(Math.round((total_paid / total_expected) * 100), 100) : 0
+  const pct      = total_expected > 0 ? Math.min(Math.round((total_paid / total_expected) * 100), 100) : 0
   const barColor = pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500'
-
-  const calcAdjPreview = (type, mode, amount) => {
-    if (!amount) return 0
-    const val = mode === 'percent' ? (Number(amount) / 100) * bill_total : Number(amount)
-    return type === 'addition' ? val : -val
-  }
 
   return (
     <div className="max-w-3xl">
-      {/* Print-only header */}
-      <div className="hidden print:block text-center mb-6 border-b-2 border-gray-800 pb-4">
-        <h1 className="text-xl font-bold uppercase">Fee Statement</h1>
-        <p className="text-sm mt-1">{student.last_name} {student.first_name} — {student.reg_number}</p>
-      </div>
+      <PageHeader
+        title={`${student.last_name} ${student.first_name}`}
+        subtitle={`${student.reg_number} · ${student.gender === 'M' ? 'Male' : 'Female'} · ${student.boarding_type || 'day'} · ${student.entry_type}`}
+        actions={
+          <div className="flex gap-2 flex-wrap">
+            <button className="btn-secondary btn btn-sm" onClick={handlePrint} disabled={printing}>
+              <Printer size={14} /> {printing ? 'Printing…' : 'Print Bill'}
+            </button>
+            <button className="btn-secondary btn btn-sm" onClick={() => navigate(`/billing/student/${id}/statement`)}>
+              <FileText size={14} /> Statement
+            </button>
+            <button className="btn-secondary btn" onClick={() => navigate(-1)}>
+              <ArrowLeft size={14} /> Back
+            </button>
+            {canEdit && (
+              <button className="btn-primary btn" onClick={() => navigate(`/payments/new?student=${id}`)}>
+                <Receipt size={14} /> Post Payment
+              </button>
+            )}
+          </div>
+        }
+      />
 
-      <div className="print:hidden">
-        <PageHeader
-          title={`${student.last_name} ${student.first_name}`}
-          subtitle={`${student.reg_number} · ${student.gender === 'M' ? 'Male' : 'Female'} · ${student.boarding_type || 'day'} · ${student.entry_type}`}
-          actions={
-            <div className="flex gap-2">
-              <button className="btn-secondary btn btn-sm" onClick={handlePrint}>
-                <Printer size={14} /> Print
-              </button>
-              <button className="btn-secondary btn btn-sm" onClick={() => navigate(`/billing/student/${id}/statement`)}>
-                <FileText size={14} /> Statement
-              </button>
-              <button className="btn-secondary btn" onClick={() => navigate(-1)}>
-                <ArrowLeft size={14} /> Back
-              </button>
-              {canEdit && (
-                <button className="btn-primary btn" onClick={() => navigate(`/payments/new?student=${id}`)}>
-                  <Receipt size={14} /> Post Payment
-                </button>
-              )}
-            </div>
-          }
-        />
-      </div>
+      {/* No-bills warning banner */}
+      {noBillsBanner && (
+        <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 flex items-start gap-3">
+          <span className="text-amber-500 text-xl mt-0.5">⚠️</span>
+          <div className="flex-1">
+            <p className="font-semibold text-amber-800 text-sm">No bills generated for this student yet.</p>
+            <p className="text-amber-700 text-xs mt-1">The bursar may have forgotten to generate bills for this class. Click <strong>↺ Generate Bills</strong> below to create them now based on this student's profile.</p>
+          </div>
+          {canEdit && (
+            <button className="btn-primary btn btn-sm shrink-0" onClick={onRegenerateBills} disabled={regenerating}>
+              <RefreshCw size={13} className={regenerating ? 'animate-spin' : ''} />
+              {regenerating ? 'Working…' : 'Generate Now'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Total Billed', value: fmt(total_expected), color: 'text-blue-700 bg-blue-50 border-blue-200' },
           { label: 'Total Paid',   value: fmt(total_paid),     color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-          { label: 'Balance Due',  value: fmt(balance),        color: `${balance > 0 ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'}` },
-          { label: 'Paid',         value: `${pct}%`,           color: `${pct >= 100 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : pct >= 60 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-red-700 bg-red-50 border-red-200'}` },
+          { label: 'Balance Due',  value: fmt(balance),        color: balance > 0 ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { label: 'Paid',         value: `${pct}%`,           color: pct >= 100 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : pct >= 60 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-red-700 bg-red-50 border-red-200' },
         ].map(c => (
           <div key={c.label} className={`border rounded-xl px-4 py-3 ${c.color}`}>
             <p className="text-xs font-medium uppercase tracking-wide opacity-60">{c.label}</p>
@@ -163,13 +182,18 @@ export default function StudentBillPage() {
         <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700">Fee Items</h2>
           {canEdit && (
-            <div className="flex gap-2 print:hidden">
-              <button className="btn-secondary btn btn-sm" onClick={onRegenerateBills}
-                title="Re-generate bills based on student's current profile (boarding type, gender, entry type)">
-                ↺ Regenerate Bills
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary btn btn-sm"
+                onClick={onRegenerateBills}
+                disabled={regenerating}
+                title="Recalculates bills based on student's current profile. Safe even after payments — only adjusts pending lines."
+              >
+                <RefreshCw size={13} className={regenerating ? 'animate-spin' : ''} />
+                {regenerating ? 'Working…' : '↺ Recalculate Bills'}
               </button>
-              <button className="btn-primary btn btn-sm" onClick={() => setShowAdjModal(true)}>
-                <Plus size={13} /> Add Adjustment
+              <button className="btn-primary btn btn-sm" onClick={() => setShowAdj(true)}>
+                + Add Adjustment
               </button>
             </div>
           )}
@@ -177,7 +201,7 @@ export default function StudentBillPage() {
 
         {bills.length === 0 ? (
           <div className="py-8 text-center text-gray-400 text-sm">
-            No bills generated. Go to Generate Bills first.
+            No bills generated yet.{canEdit && ' Use "↺ Recalculate Bills" above to generate them.'}
           </div>
         ) : (
           <table className="data-table">
@@ -187,7 +211,7 @@ export default function StudentBillPage() {
                 <th>Type</th>
                 <th>Status</th>
                 <th className="text-right">Amount</th>
-                <th className="print:hidden"></th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -200,7 +224,7 @@ export default function StudentBillPage() {
                   </td>
                   <td><span className={`badge ${b.status === 'waived' ? 'badge-gray' : 'badge-blue'}`}>{b.status}</span></td>
                   <td className="text-right font-semibold">{fmt(b.amount)}</td>
-                  <td className="text-right print:hidden">
+                  <td className="text-right">
                     {canEdit && (
                       <button
                         onClick={() => onWaive(b)}
@@ -232,11 +256,11 @@ export default function StudentBillPage() {
                     <td className={`text-right font-semibold ${isAdd ? 'text-red-700' : 'text-emerald-700'}`}>
                       {isAdd ? '+' : '−'}{fmt(effect)}
                     </td>
-                    <td className="text-right print:hidden">
-                      <button className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
-                        onClick={() => setDeleteAdj(a)}>
-                        <Trash2 size={12} />
-                      </button>
+                    <td className="text-right">
+                      {canEdit && (
+                        <button className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
+                          onClick={() => setDeleteAdj(a)}>✕</button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -273,7 +297,7 @@ export default function StudentBillPage() {
             </thead>
             <tbody>
               {payments.map(p => (
-                <tr key={p.id}>
+                <tr key={p.id} className={p.is_reversed ? 'opacity-40 line-through' : ''}>
                   <td className="font-mono text-xs font-semibold text-blue-600">{p.receipt_number}</td>
                   <td className="text-sm text-gray-600">{fmtDate(p.payment_date)}</td>
                   <td><span className="badge-blue badge uppercase">{p.payment_method}</span></td>
@@ -300,55 +324,14 @@ export default function StudentBillPage() {
         )}
       </div>
 
-      {/* Adjustment modal */}
-      <Modal
-        open={showAdjModal}
-        onClose={() => { setShowAdjModal(false); reset() }}
-        title="Add Adjustment"
-        footer={
-          <>
-            <button className="btn-secondary btn" onClick={() => { setShowAdjModal(false); reset() }}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onAddAdj)} disabled={saving}>
-              {saving ? 'Saving…' : 'Add'}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Type" required>
-              <select className="form-select" {...register('type')}>
-                <option value="discount">Discount (reduces bill)</option>
-                <option value="addition">Addition (increases bill)</option>
-              </select>
-            </Field>
-            <Field label="Mode" required>
-              <select className="form-select" {...register('calc_mode')}>
-                <option value="fixed">Fixed amount (₦)</option>
-                <option value="percent">Percentage (%)</option>
-                <option value="flat">Flat deduction (₦)</option>
-              </select>
-            </Field>
-          </div>
-          <Field label={calcMode === 'percent' ? 'Percentage (%)' : 'Amount (₦)'} required error={errors.amount?.message}>
-            <input type="number" min="0" step="0.01" className="form-input"
-              placeholder={calcMode === 'percent' ? '10' : '5000'}
-              {...register('amount', { required: 'Required', min: { value: 0.01, message: 'Must be > 0' }, valueAsNumber: true })} />
-          </Field>
-          <Field label="Reason" required error={errors.reason?.message}>
-            <input className="form-input" placeholder="e.g. Scholarship, Late fee"
-              {...register('reason', { required: 'Reason is required' })} />
-          </Field>
-          {watch('amount') > 0 && (
-            <div className={`p-3 rounded-lg border text-sm ${adjType === 'addition' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
-              This will {adjType === 'addition' ? 'add' : 'deduct'}{' '}
-              <strong>{fmt(Math.abs(calcAdjPreview(adjType, calcMode, watch('amount'))))}</strong>{' '}
-              {adjType === 'addition' ? 'to' : 'from'} the bill.
-              New total: <strong>{fmt(total_expected + calcAdjPreview(adjType, calcMode, watch('amount')))}</strong>
-            </div>
-          )}
-        </div>
-      </Modal>
+      {/* Isolated adjustment modal — no re-renders on parent */}
+      <AdjustmentModal
+        open={showAdj}
+        onClose={() => setShowAdj(false)}
+        studentId={id}
+        billTotal={bill_total}
+        onSaved={load}
+      />
 
       <Confirm
         open={!!deleteAdj}

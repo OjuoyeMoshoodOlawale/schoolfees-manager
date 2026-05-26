@@ -50,6 +50,36 @@ ipcMain.handle('shell:open-path', (_, p) => shell.openPath(p))
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('app:get-db-dir', () => dbDir)
 
+// ─── Clean Print — renders pure HTML in a hidden window, no app chrome ─────────
+ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
+  return new Promise((resolve) => {
+    const printWin = new BrowserWindow({
+      width: 800, height: 600,
+      show: false,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    })
+    const fullHtml = `<!DOCTYPE html><html><head>
+      <meta charset="utf-8"/>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial, sans-serif; font-size: 12pt; background: white; }
+        @page { margin: 1cm; }
+      </style>
+    </head><body>${html}</body></html>`
+
+    printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
+    printWin.webContents.once('did-finish-load', () => {
+      printWin.webContents.print(
+        { silent, printBackground: true, margins: { marginType: 'custom', top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 } },
+        (success, errorType) => {
+          printWin.destroy()
+          resolve({ ok: success, error: success ? null : errorType })
+        }
+      )
+    })
+  })
+})
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 let win
 function createWindow() {

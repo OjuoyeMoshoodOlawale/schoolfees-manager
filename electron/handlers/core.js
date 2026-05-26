@@ -3,6 +3,11 @@ const { getDb, getDbPath } = require('../lib/database')
 const path = require('path')
 const fs   = require('fs')
 
+// Lazy-loaded so billing.js registers first (both modules loaded by main.js)
+function getAutoRecalc() {
+  try { return require('./billing').autoRecalcStudentBills } catch { return null }
+}
+
 module.exports = function register_coreHandlers() {
   const dbDir = path.dirname(getDbPath())
 // ─── IPC Handlers ──────────────────────────────────────────────────────────
@@ -135,6 +140,20 @@ ipcMain.handle('students:update', (_, { id, class_id, parent_email='', ...data }
         VALUES (?,?,?,?,'active',0)
         ON CONFLICT(student_id,term_id) DO UPDATE SET class_id=excluded.class_id`)
         .run([id, currentTerm.session_id, currentTerm.id, class_id])
+
+      // Auto-recalculate bills for the student whenever profile (gender/boarding/entry/class) changes
+      try {
+        const autoRecalc = getAutoRecalc()
+        if (autoRecalc) {
+          db.exec('BEGIN')
+          autoRecalc(db, id, currentTerm.id)
+          db.exec('COMMIT')
+        }
+      } catch (e) {
+        try { db.exec('ROLLBACK') } catch {}
+        // Non-fatal: bill recalc failure should not block profile save
+        console.warn('[auto-regen] Bill recalculation failed silently:', e.message)
+      }
     }
   }
   return { ok: true }
