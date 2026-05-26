@@ -306,8 +306,9 @@ ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
     ORDER BY total_billed DESC
   `).all(params)
 
-  // By class — correct approach: aggregate bills and payments independently, then join
-  // Doing it in one query causes paid amounts to be multiplied by number of bill rows per student
+  // By class — aggregate bills and payments independently using student_bills as class anchor
+  // Using student_bills for class lookup (not student_status) avoids missing payments
+  // where payment term_id doesn't perfectly match student_status term_id
   const billsByClass = db.prepare(`
     SELECT ss.class_id,
       COALESCE(SUM(sb.amount), 0) as total_billed
@@ -318,25 +319,41 @@ ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
     GROUP BY ss.class_id
   `).all(params)
 
-  const paidByClass = db.prepare(`
-    SELECT ss.class_id,
-      COALESCE(SUM(p.amount_paid), 0) as total_paid
-    FROM payments p
-    JOIN student_status ss ON ss.student_id = p.student_id AND ss.term_id = p.term_id
-    WHERE p.is_reversed = 0 AND p.amount_paid > 0
-    ${term_id ? 'AND p.term_id=?' : ''}
-    GROUP BY ss.class_id
+  // Get class_id for each student who has bills this term — used as lookup for payments
+  const studentClassMap_rows = db.prepare(`
+    SELECT DISTINCT sb.student_id, ss.class_id
+    FROM student_bills sb
+    JOIN student_status ss ON ss.student_id = sb.student_id AND ss.term_id = sb.term_id
+    WHERE sb.status NOT IN ('waived','frozen')
+    ${term_id ? 'AND sb.term_id=?' : ''}
+  `).all(params)
+  const studentClassMap = new Map(studentClassMap_rows.map(r => [r.student_id, r.class_id]))
+
+  // Sum payments per student, then group by class using the bill-derived class lookup
+  const paymentRows = db.prepare(`
+    SELECT student_id, COALESCE(SUM(amount_paid), 0) as paid
+    FROM payments
+    WHERE is_reversed = 0 AND amount_paid > 0
+    ${term_id ? 'AND term_id=?' : ''}
+    GROUP BY student_id
   `).all(params)
 
-  // Join by class_id and get class name
+  // Aggregate payment totals per class
+  const paidPerClass = new Map()
+  for (const row of paymentRows) {
+    const classId = studentClassMap.get(row.student_id)
+    if (classId === undefined) continue // payment for student with no bills in this term
+    paidPerClass.set(classId, (paidPerClass.get(classId) || 0) + Number(row.paid))
+  }
+
+  // Join bills and payments by class
   const classNames = db.prepare('SELECT id, name FROM classes').all()
   const classMap = new Map(classNames.map(c => [c.id, c.name]))
-  const paidMap  = new Map(paidByClass.map(r => [r.class_id, r.total_paid]))
 
   const byClass = billsByClass.map(r => ({
     class_name:   classMap.get(r.class_id) || `Class ${r.class_id}`,
     total_billed: Number(r.total_billed),
-    total_paid:   Number(paidMap.get(r.class_id) || 0),
+    total_paid:   Number(paidPerClass.get(r.class_id) || 0),
   })).sort((a, b) => a.class_name.localeCompare(b.class_name))
 
   // Payment methods — exclude reversed payments
