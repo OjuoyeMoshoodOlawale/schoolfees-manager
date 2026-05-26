@@ -61,7 +61,15 @@ export default function BackupPage() {
 
   const loadAll = useCallback(async () => {
     window.api.getDbPath().then(p => setDbPath(p))
-    window.api.gdriveStatus().then(s => setGDriveStatus(s))
+    window.api.gdriveStatus().then(s => {
+      setGDriveStatus(s)
+      // Auto-expand credentials panel if not yet configured
+      if (!s?.configured) setShowCreds(true)
+    })
+    // Pre-fill client_id (safe — never returns secret)
+    window.api.gdriveGetClientId?.().then(r => {
+      if (r?.client_id) setCreds(prev => ({ ...prev, client_id: r.client_id }))
+    })
     window.api.schedulerGetConfig().then(c => setSchedCfg(c))
     window.api.getSyncFolder().then(s => setSyncCfg(s))
   }, [])
@@ -275,10 +283,22 @@ export default function BackupPage() {
           {!gdriveStatus?.configured && (
             <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
               <p className="font-semibold">Setup required — one-time only:</p>
-              <p>1. Go to <a href="#" onClick={e => { e.preventDefault(); window.api.openPath && shell.openExternal('https://console.cloud.google.com') }} className="underline">Google Cloud Console</a>, create a project</p>
-              <p>2. Enable the <strong>Google Drive API</strong></p>
-              <p>3. Create OAuth 2.0 credentials (Desktop App type)</p>
-              <p>4. Copy the Client ID and Client Secret below</p>
+              <p>1. Go to <span className="underline cursor-pointer text-blue-600" onClick={() => window.api.openExternal?.('https://console.cloud.google.com')}>console.cloud.google.com</span> → create a project</p>
+              <p>2. Enable the <strong>Google Drive API</strong> for that project</p>
+              <p>3. Go to <strong>APIs &amp; Services → Credentials → Create Credentials → OAuth 2.0 Client ID</strong></p>
+              <p>4. Choose <strong>Desktop app</strong> as the application type</p>
+              <p>5. Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> into the fields below and click Save</p>
+            </div>
+          )}
+
+          {/* Error troubleshooting — shown when configured but getting auth errors */}
+          {gdriveStatus?.configured && !gdriveStatus?.connected && (
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">If you see "missing authentication credential":</p>
+              <p>• Make sure your Client ID and Client Secret are entered correctly below</p>
+              <p>• In Google Cloud Console → Credentials, confirm the OAuth client still exists and is <strong>not deleted</strong></p>
+              <p>• Add <code className="bg-white px-1 rounded">http://localhost:42813</code> as an Authorised redirect URI on the OAuth client</p>
+              <p>• If it still fails: delete the OAuth client in Google Console, create a new one, and re-enter the credentials here</p>
             </div>
           )}
 
@@ -295,6 +315,9 @@ export default function BackupPage() {
             <div className="mb-3 space-y-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
               <div>
                 <label className="form-label text-xs">Client ID</label>
+                {gdriveStatus?.client_id_hint && !creds.client_id && (
+                  <p className="text-xs text-emerald-600 mb-1 font-mono">Saved: {gdriveStatus.client_id_hint} — re-enter to update</p>
+                )}
                 <input className="form-input text-xs font-mono" placeholder="12345-xxx.apps.googleusercontent.com"
                   value={creds.client_id} onChange={e => setCreds(c => ({ ...c, client_id: e.target.value }))} />
               </div>
@@ -306,6 +329,12 @@ export default function BackupPage() {
               <button className="btn btn-primary btn-sm w-full justify-center" onClick={handleSaveCreds}>
                 Save Credentials
               </button>
+            </div>
+          )}
+
+          {!gdriveStatus?.configured && !gdriveStatus?.connected && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+              <strong>Setup required:</strong> Enter your Google OAuth Client ID and Client Secret above, then click Save Credentials before connecting.
             </div>
           )}
 

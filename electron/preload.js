@@ -211,6 +211,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Google Drive Backup
   gdriveStatus:       ()     => ipcRenderer.invoke('gdrive:status'),
+  gdriveGetClientId:  ()     => ipcRenderer.invoke('gdrive:get-client-id'),
   gdriveSaveCreds:    (d)    => ipcRenderer.invoke('gdrive:save-credentials', d),
   gdriveConnect:      ()     => ipcRenderer.invoke('gdrive:connect'),
   gdriveDisconnect:   ()     => ipcRenderer.invoke('gdrive:disconnect'),
@@ -225,6 +226,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Utility
   openPath:           (p)    => ipcRenderer.invoke('shell:open-path', p),
+  openExternal:       (url)  => ipcRenderer.invoke('shell:open-external', url),
   getAppVersion:      ()     => ipcRenderer.invoke('app:version'),
   checkUpdate:        ()     => ipcRenderer.invoke('app:check-update'),
   getDbDir:           ()     => ipcRenderer.invoke('app:get-db-dir'),

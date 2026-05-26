@@ -79,13 +79,22 @@ async function getAuthenticatedDrive() {
 ipcMain.handle('gdrive:status', () => {
   const cfg   = loadConfig()
   const token = loadToken()
+  // configured = file exists AND both fields are non-empty strings
+  const hasValidCreds = !!(cfg?.client_id?.trim() && cfg?.client_secret?.trim())
   return {
-    configured: !!cfg,
-    connected:  !!(cfg && token && token.refresh_token),
-    email:      token?.email     || null,
-    lastBackup: token?.lastBackup || null,
-    folderId:   token?.folderId  || null,
+    configured:    hasValidCreds,
+    connected:     !!(hasValidCreds && token?.refresh_token),
+    email:         token?.email      || null,
+    lastBackup:    token?.lastBackup || null,
+    folderId:      token?.folderId   || null,
+    client_id_hint: cfg?.client_id   ? cfg.client_id.slice(0, 12) + '…' : null,
   }
+})
+
+// ── Get saved client_id (for pre-fill — never returns secret) ────────────────
+ipcMain.handle('gdrive:get-client-id', () => {
+  const cfg = loadConfig()
+  return { client_id: cfg?.client_id || '' }
 })
 
 // ── Save credentials ──────────────────────────────────────────────────────────
@@ -97,7 +106,9 @@ ipcMain.handle('gdrive:save-credentials', (_, { client_id, client_secret }) => {
 // ── OAuth connect flow ────────────────────────────────────────────────────────
 ipcMain.handle('gdrive:connect', async () => {
   const cfg = loadConfig()
-  if (!cfg) return { ok: false, error: 'No credentials configured.' }
+  if (!cfg?.client_id?.trim() || !cfg?.client_secret?.trim()) {
+    return { ok: false, error: 'OAuth credentials are missing or incomplete. Open the "OAuth Credentials" section, enter your Client ID and Client Secret, click Save Credentials, then try connecting again.' }
+  }
 
   const oauth2  = makeOAuth2Client(cfg)
   const authUrl = oauth2.generateAuthUrl({

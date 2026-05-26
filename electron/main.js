@@ -56,7 +56,8 @@ const { startScheduler } = require('./lib/scheduler')
 startScheduler()
 
 // ─── Utility IPC ──────────────────────────────────────────────────────────────
-ipcMain.handle('shell:open-path', (_, p) => shell.openPath(p))
+ipcMain.handle('shell:open-path',     (_, p)   => shell.openPath(p))
+ipcMain.handle('shell:open-external', (_, url) => shell.openExternal(url))
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('app:get-db-dir', () => dbDir)
 
