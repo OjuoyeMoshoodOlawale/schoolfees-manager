@@ -133,59 +133,85 @@ function logEmail(db, { email, student_id, subject, body, result }) {
       result.ok ? '' : (result.error||'Unknown error')])
 }
 
-// ── Build receipt email HTML ──────────────────────────────────────────────────
+// ── Build receipt HTML — matches PaymentsPage ReceiptModal styling ───────────
 function buildReceiptHtml({ settings, student, payment, termRow, classRow, balance, receipt_number,
   amount_paid, payment_date, payment_method, reference }) {
   const currency = settings.currency_symbol || '₦'
   const fmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 })
   const schoolName = settings.school_name || 'SchoolFees Manager'
-  const logoHtml   = settings.logo_path
-    ? `<img src="cid:school_logo" style="max-height:60px;max-width:160px;display:block;margin:0 auto 8px;" alt="${schoolName}"/>`
+  const isReversal = Number(amount_paid) < 0
+
+  const logoHtml = settings.logo_path
+    ? `<img src="cid:school_logo" style="max-height:56px;max-width:140px;display:block;margin:0 auto 10px;object-fit:contain;" alt="${schoolName}"/>`
     : ''
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  const rows = [
+    ['Student',    `${student.last_name || ''} ${student.first_name || ''}`.trim()],
+    ['Reg #',      student.reg_number || '—'],
+    ['Class',      classRow?.name || '—'],
+    ['Term',       termRow ? `${termRow.name}, ${termRow.session_name}` : '—'],
+    ['Date',       payment_date],
+    ['Method',     String(payment_method||'').toUpperCase()],
+    reference ? ['Reference', reference] : null,
+  ].filter(Boolean)
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
 <style>
-  body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:20px}
-  .card{background:#fff;border-radius:12px;max-width:520px;margin:0 auto;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .header{text-align:center;border-bottom:3px solid #1e40af;padding-bottom:16px;margin-bottom:24px}
-  .school{font-size:20px;font-weight:bold;color:#1e3a8a;text-transform:uppercase}
-  .rtitle{font-size:13px;color:#6b7280;margin-top:4px}
-  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:14px}
-  .label{color:#6b7280}.value{font-weight:600;color:#111827}
-  .amt-box{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;padding:16px;margin:20px 0}
-  .amt{font-size:28px;font-weight:bold;color:#1d4ed8}
-  .bal-box{background:${balance>0?'#fef2f2':'#f0fdf4'};border:1px solid ${balance>0?'#fecaca':'#bbf7d0'};border-radius:8px;text-align:center;padding:12px;margin-top:8px}
-  .bal{font-size:18px;font-weight:bold;color:${balance>0?'#dc2626':'#16a34a'}}
-  .footer{text-align:center;font-size:12px;color:#9ca3af;margin-top:24px;border-top:1px solid #f3f4f6;padding-top:16px}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Arial,sans-serif;background:#f1f5f9;padding:24px}
+  .card{background:#fff;border-radius:16px;max-width:480px;margin:0 auto;
+        box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden}
+  .header{text-align:center;padding:24px 24px 16px;border-bottom:1px solid #f1f5f9}
+  .school{font-size:15pt;font-weight:bold;text-transform:uppercase;color:#1e293b;letter-spacing:.02em}
+  .title{font-size:11pt;font-weight:700;margin-top:4px;color:#374151}
+  .rcpt{font-size:9pt;color:#9ca3af;margin-top:2px}
+  .rows{padding:16px 24px}
+  .row{display:flex;justify-content:space-between;align-items:center;
+       padding:7px 0;border-bottom:1px solid #f8fafc;font-size:10pt}
+  .row:last-child{border-bottom:none}
+  .lbl{color:#9ca3af}
+  .val{font-weight:600;color:#111827;text-align:right}
+  .amt-box{margin:0 16px 12px;padding:16px;background:#eff6ff;
+           border:1.5px solid #bfdbfe;border-radius:10px;text-align:center}
+  .amt-lbl{font-size:9pt;color:#6b7280}
+  .amt-val{font-size:22pt;font-weight:bold;color:#1d4ed8;margin-top:4px}
+  .bal-box{margin:0 16px 16px;padding:12px;border-radius:10px;text-align:center}
+  .bal-paid{background:#f0fdf4;border:1.5px solid #bbf7d0}
+  .bal-due{background:#fef2f2;border:1.5px solid #fecaca}
+  .bal-lbl{font-size:9pt;color:#6b7280}
+  .bal-val-paid{font-size:14pt;font-weight:bold;color:#16a34a;margin-top:3px}
+  .bal-val-due{font-size:14pt;font-weight:bold;color:#dc2626;margin-top:3px}
+  .footer{text-align:center;padding:12px 24px 16px;font-size:9pt;color:#9ca3af;
+          border-top:1px solid #f1f5f9}
 </style></head><body>
 <div class="card">
   <div class="header">
     ${logoHtml}
     <div class="school">${schoolName}</div>
-    <div class="rtitle">Payment Receipt &mdash; ${receipt_number}</div>
+    <div class="title">${isReversal ? 'REVERSAL NOTICE' : 'PAYMENT RECEIPT'}</div>
+    <div class="rcpt">${receipt_number}</div>
   </div>
-  <div class="row"><span class="label">Student</span><span class="value">${student.last_name} ${student.first_name}</span></div>
-  <div class="row"><span class="label">Reg. Number</span><span class="value">${student.reg_number}</span></div>
-  <div class="row"><span class="label">Class</span><span class="value">${classRow?.name||'—'}</span></div>
-  <div class="row"><span class="label">Term</span><span class="value">${termRow?.name}, ${termRow?.session_name}</span></div>
-  <div class="row"><span class="label">Payment Date</span><span class="value">${payment_date}</span></div>
-  <div class="row"><span class="label">Method</span><span class="value">${String(payment_method||'').toUpperCase()}</span></div>
-  ${reference ? `<div class="row"><span class="label">Reference</span><span class="value">${reference}</span></div>` : ''}
+  <div class="rows">
+    ${rows.map(([l,v]) => `<div class="row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('')}
+  </div>
   <div class="amt-box">
-    <div style="font-size:13px;color:#6b7280;margin-bottom:4px">Amount Paid</div>
-    <div class="amt">${fmt(amount_paid)}</div>
+    <div class="amt-lbl">${isReversal ? 'Amount Reversed' : 'Amount Paid'}</div>
+    <div class="amt-val">${fmt(Math.abs(Number(amount_paid)))}</div>
   </div>
-  <div class="bal-box">
-    <div style="font-size:12px;color:#6b7280;margin-bottom:4px">${balance>0?'Outstanding Balance':'Account Status'}</div>
-    <div class="bal">${balance>0 ? fmt(balance)+' remaining' : '&#10003; Fully Paid'}</div>
-  </div>
+  ${!isReversal ? `
+  <div class="bal-box ${balance > 0 ? 'bal-due' : 'bal-paid'}">
+    <div class="bal-lbl">${balance > 0 ? 'Outstanding Balance' : 'Account Status'}</div>
+    <div class="${balance > 0 ? 'bal-val-due' : 'bal-val-paid'}">${balance > 0 ? fmt(balance) + ' remaining' : '&#10003; Fully Paid'}</div>
+  </div>` : ''}
   <div class="footer">
-    Thank you for your payment.<br/>
-    ${settings.phone ? 'Tel: '+settings.phone : ''} ${settings.email ? '&bull; '+settings.email : ''}
+    ${settings.receipt_footer || 'Thank you for your payment.'}
+    ${settings.phone ? `<br/>${settings.phone}` : ''}
+    ${settings.email ? ` &bull; ${settings.email}` : ''}
   </div>
-</div></body></html>`
+</div>
+</body></html>`
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // IPC HANDLERS
 // ─────────────────────────────────────────────────────────────────────────────

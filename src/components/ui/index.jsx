@@ -173,9 +173,14 @@ export function Spinner({ className = '' }) {
 
 // ─── Export to Excel helper ───────────────────────────────────────────────────
 export async function exportToExcel(data, filename = 'export') {
-  const XLSX = await import('xlsx')
-  const ws = XLSX.utils.json_to_sheet(data)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
-  XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0,10)}.xlsx`)
+  try {
+    const XLSX = await import('xlsx')
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
+    XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0,10)}.xlsx`)
+  } catch (e) {
+    console.error('[exportToExcel]', e)
+    throw e  // re-throw so callers can catch and reset their loading state
+  }
 }

@@ -122,13 +122,15 @@ let win
 function createWindow() {
   // Register safe local-file protocol: localfile:///path → serves file from disk
   protocol.handle('localfile', (request) => {
-    // Strip scheme: localfile://C:/path or localfile:///C:/path → C:/path
+    // Strip scheme — handles localfile://C:/path and localfile:///C:/path
     let filePath = decodeURIComponent(request.url.replace('localfile://', ''))
-    // Remove leading slash that appears on some platforms: /C:/path → C:/path
+    // Remove leading slash before Windows drive letter: /C:/path → C:/path
     if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
-    // Normalise backslashes to forward slashes (Windows)
+    // Normalise backslashes (Windows)
     filePath = filePath.replace(/\\/g, '/')
-    return net.fetch(`file:///${filePath}`)
+    // Encode each path segment so spaces and special chars don't break the URL
+    const fileUrl = 'file:///' + filePath.split('/').map(seg => encodeURIComponent(seg)).join('/')
+    return net.fetch(fileUrl)
   })
 
   win = new BrowserWindow({
@@ -150,23 +152,34 @@ function createWindow() {
   win.once('ready-to-show', () => win.show())
   win.webContents.on('did-finish-load', () => win.setTitle('SchoolFees Manager'))
 }
+
+// ─── DB lock file cleanup ─────────────────────────────────────────────────────
+// SQLite WAL mode leaves a .lock file that prevents reopening after a crash.
+// Delete it on startup (safe — if the DB was properly closed the lock is empty)
+// and on every quit path.
+function cleanDbLock() {
+  const lockFile = dbPath + '.lock'
+  try { if (fs.existsSync(lockFile)) { fs.unlinkSync(lockFile); console.log('[main] Removed stale DB lock file') } } catch {}
+}
+cleanDbLock() // Run immediately on startup
+
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     require('./lib/database').closeDb()
+    cleanDbLock()
     app.quit()
   }
 })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 
 // ─── Graceful shutdown on Ctrl+C / kill in dev ────────────────────────────────
-// Without these, Vite/nodemon kills the process before closeDb() runs,
-// leaving the WASM DB un-flushed → activation row lost → setup wizard on next start.
 function gracefulShutdown(signal) {
   console.log(`[main] ${signal} received — closing DB before exit`)
   try { require('./lib/database').closeDb() } catch {}
+  cleanDbLock()
   process.exit(0)
 }
-process.on('SIGINT',  () => gracefulShutdown('SIGINT'))   // Ctrl+C in terminal
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))  // kill / system shutdown
-process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'))  // nodemon restart signal
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'))
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'))

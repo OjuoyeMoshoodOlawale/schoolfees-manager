@@ -27,35 +27,59 @@ function ReceiptModal({ data, onClose, fmt, school }) {
   const handlePrint = async () => {
     const currency = school?.currency_symbol || '₦'
     const fmtN = n => currency + Number(n||0).toLocaleString('en-NG',{minimumFractionDigits:2})
-    const billRows = bills.map(b => `<tr style="border-bottom:1px solid #e5e7eb">
-      <td style="padding:5px 10px">${b.fee_item_name||b.name||'—'}</td>
-      <td style="text-align:right;padding:5px 10px">${fmtN(b.amount)}</td>
-    </tr>`).join('')
-    const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-      <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:18px">
-        <h1 style="font-size:14pt;font-weight:bold;text-transform:uppercase;margin:0">${school?.school_name||'School'}</h1>
-        <p style="margin:4px 0 0;font-size:12pt;font-weight:bold">PAYMENT RECEIPT</p>
-        <p style="margin:2px 0 0;font-size:10pt;color:#6b7280">${payment.receipt_number}</p>
-      </div>
-      <table style="width:100%;font-size:10pt;margin-bottom:12px">
-        <tr><td style="color:#6b7280;padding:3px 0">Student</td><td style="font-weight:600">${payment.last_name||''} ${payment.first_name||''}</td></tr>
-        <tr><td style="color:#6b7280;padding:3px 0">Reg #</td><td>${payment.reg_number||'—'}</td></tr>
-        <tr><td style="color:#6b7280;padding:3px 0">Class</td><td>${payment.class_name||'—'}</td></tr>
-        <tr><td style="color:#6b7280;padding:3px 0">Term</td><td>${payment.term_name||''}, ${payment.session_name||''}</td></tr>
-        <tr><td style="color:#6b7280;padding:3px 0">Date</td><td>${payment.payment_date}</td></tr>
-        <tr><td style="color:#6b7280;padding:3px 0">Method</td><td style="text-transform:uppercase">${payment.payment_method||''}</td></tr>
-        ${payment.reference ? `<tr><td style="color:#6b7280;padding:3px 0">Ref</td><td>${payment.reference}</td></tr>` : ''}
-      </table>
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;padding:14px;margin:14px 0">
-        <p style="margin:0;font-size:11pt;color:#6b7280">Amount Paid</p>
-        <p style="margin:4px 0 0;font-size:22pt;font-weight:bold;color:#1d4ed8">${fmtN(payment.amount_paid)}</p>
-      </div>
-      <div style="background:${balance>0?'#fef2f2':'#f0fdf4'};border:1px solid ${balance>0?'#fecaca':'#bbf7d0'};border-radius:8px;text-align:center;padding:10px">
-        <p style="margin:0;font-size:10pt;color:#6b7280">${balance>0?'Outstanding Balance':'Account Status'}</p>
-        <p style="margin:3px 0 0;font-size:15pt;font-weight:bold;color:${balance>0?'#dc2626':'#16a34a'}">${balance>0?fmtN(balance)+' remaining':'&#10003; Fully Paid'}</p>
-      </div>
-      ${school?.receipt_footer ? `<p style="text-align:center;margin-top:12px;font-size:9pt;color:#9ca3af">${school.receipt_footer}</p>` : ''}
-    </div>`
+    const isReversal = payment.amount_paid < 0
+    const rows = [
+      ['Student',   `${payment.last_name||''} ${payment.first_name||''}`.trim()],
+      ['Reg #',     payment.reg_number||'—'],
+      ['Class',     payment.class_name||'—'],
+      ['Term',      `${payment.term_name||''}, ${payment.session_name||''}`],
+      ['Date',      payment.payment_date],
+      ['Method',    (payment.payment_method||'').toUpperCase()],
+      ...(payment.reference ? [['Reference', payment.reference]] : []),
+    ]
+    const logoHtml = school?.logo_path
+      ? `<img src="localfile://${school.logo_path}" style="max-height:56px;max-width:140px;display:block;margin:0 auto 10px;object-fit:contain;"/>`
+      : ''
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:Arial,sans-serif;background:#f1f5f9;padding:24px}
+  .card{background:#fff;border-radius:16px;max-width:480px;margin:0 auto;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden}
+  .header{text-align:center;padding:24px 24px 16px;border-bottom:1px solid #f1f5f9}
+  .school{font-size:15pt;font-weight:bold;text-transform:uppercase;color:#1e293b}
+  .title{font-size:11pt;font-weight:700;margin-top:4px;color:#374151}
+  .rcpt{font-size:9pt;color:#9ca3af;margin-top:2px}
+  .row{display:flex;justify-content:space-between;padding:7px 20px;border-bottom:1px solid #f8fafc;font-size:10pt}
+  .lbl{color:#9ca3af}.val{font-weight:600;color:#111827}
+  .amt-box{margin:12px 16px;padding:16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;text-align:center}
+  .amt-lbl{font-size:9pt;color:#6b7280}.amt-val{font-size:22pt;font-weight:bold;color:#1d4ed8;margin-top:4px}
+  .bal-paid{margin:0 16px 16px;padding:12px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;text-align:center}
+  .bal-due{margin:0 16px 16px;padding:12px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;text-align:center}
+  .bal-lbl{font-size:9pt;color:#6b7280}
+  .bal-paid .bal-val{font-size:14pt;font-weight:bold;color:#16a34a;margin-top:3px}
+  .bal-due .bal-val{font-size:14pt;font-weight:bold;color:#dc2626;margin-top:3px}
+  .footer{text-align:center;padding:12px 24px 16px;font-size:9pt;color:#9ca3af;border-top:1px solid #f1f5f9}
+</style></head><body>
+<div class="card">
+  <div class="header">
+    ${logoHtml}
+    <div class="school">${school?.school_name||'School'}</div>
+    <div class="title">${isReversal?'REVERSAL NOTICE':'PAYMENT RECEIPT'}</div>
+    <div class="rcpt">${payment.receipt_number}</div>
+  </div>
+  ${rows.map(([l,v])=>`<div class="row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('')}
+  <div class="amt-box">
+    <div class="amt-lbl">${isReversal?'Amount Reversed':'Amount Paid'}</div>
+    <div class="amt-val">${fmtN(Math.abs(payment.amount_paid))}</div>
+  </div>
+  ${!isReversal ? `
+  <div class="${balance>0?'bal-due':'bal-paid'}">
+    <div class="bal-lbl">${balance>0?'Outstanding Balance':'Account Status'}</div>
+    <div class="bal-val">${balance>0?fmtN(balance)+' remaining':'&#10003; Fully Paid'}</div>
+  </div>` : ''}
+  <div class="footer">${school?.receipt_footer||'Thank you for your payment.'}
+  ${school?.phone?`<br/>${school.phone}`:''}${school?.email?` &bull; ${school.email}`:''}</div>
+</div></body></html>`
     await printCleanHtml(html)
   }
 

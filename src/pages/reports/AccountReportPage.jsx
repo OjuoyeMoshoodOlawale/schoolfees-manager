@@ -48,7 +48,8 @@ export default function AccountReportPage() {
   const [selSession, setSelSession] = useState('')
   const [selTerm, setSelTerm]   = useState('')
   const [report, setReport]     = useState(null)
-  const [loading, setLoading]   = useState(false)
+  const [loading,  setLoading]  = useState(false)
+  const [printing, setPrinting] = useState(false)
 
   useEffect(() => {
     async function init() {

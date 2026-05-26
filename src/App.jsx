@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Layout from './components/layout/Layout'
 import { Spinner } from './components/ui'
+import ErrorBoundary from './components/ErrorBoundary'
 
 // Auth screens
 import ActivationScreen from './pages/auth/ActivationScreen'
@@ -114,7 +115,8 @@ function MainApp() {
   const { accounting } = useAuth()
 
   return (
-    <Layout>
+    <ErrorBoundary>
+      <Layout>
       <Routes>
         <Route path="/"                       element={<Dashboard />} />
         <Route path="/sessions"               element={<SessionsPage />} />
@@ -174,6 +176,7 @@ function MainApp() {
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Layout>
+    </ErrorBoundary>
   )
 }
 
