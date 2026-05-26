@@ -110,3 +110,15 @@ app.on('window-all-closed', () => {
   }
 })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+
+// ─── Graceful shutdown on Ctrl+C / kill in dev ────────────────────────────────
+// Without these, Vite/nodemon kills the process before closeDb() runs,
+// leaving the WASM DB un-flushed → activation row lost → setup wizard on next start.
+function gracefulShutdown(signal) {
+  console.log(`[main] ${signal} received — closing DB before exit`)
+  try { require('./lib/database').closeDb() } catch {}
+  process.exit(0)
+}
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'))   // Ctrl+C in terminal
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))  // kill / system shutdown
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'))  // nodemon restart signal

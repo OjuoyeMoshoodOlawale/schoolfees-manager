@@ -42,6 +42,12 @@ function getDb() {
         initSchema()
         migrateSchema()
         seedDefaults()
+        // In dev mode: ensure setup_complete is always '1' so the activation/setup
+        // wizard never shows after a Ctrl+C crash — dev machines shouldn't lose this.
+        const _isDev = process.env.NODE_ENV === 'development'
+        if (_isDev) {
+          db.prepare("INSERT OR REPLACE INTO app_state (key,value) VALUES ('setup_complete','1')").run([])
+        }
         break
       } catch (e) {
         lastErr = e
