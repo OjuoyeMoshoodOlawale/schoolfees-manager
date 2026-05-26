@@ -290,38 +290,73 @@ ipcMain.handle('reports:dashboard', () => {
 
 ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
   const db = getDb()
-  let termFilter = term_id ? 'AND sb.term_id=?' : ''
-  let params = term_id ? [term_id] : []
+  const params = term_id ? [term_id] : []
 
-  // By fee item
-  const byFeeItem = db.prepare(`SELECT fi.name as fee_item, 
-    COALESCE(SUM(sb.amount),0) as total_billed,
-    COUNT(DISTINCT sb.student_id) as student_count
+  // By fee item — exclude waived and frozen bills
+  const byFeeItem = db.prepare(`
+    SELECT fi.name as fee_item,
+      COALESCE(SUM(sb.amount), 0) as total_billed,
+      COUNT(DISTINCT sb.student_id) as student_count
     FROM student_bills sb
-    JOIN bill_config bc ON bc.id=sb.bill_config_id
-    JOIN fee_items fi ON fi.id=bc.fee_item_id
-    ${term_id ? 'WHERE sb.term_id=?' : ''}
-    GROUP BY fi.name ORDER BY total_billed DESC`).all(params)
+    JOIN bill_config bc ON bc.id = sb.bill_config_id
+    JOIN fee_items fi   ON fi.id = bc.fee_item_id
+    WHERE sb.status NOT IN ('waived','frozen')
+    ${term_id ? 'AND sb.term_id=?' : ''}
+    GROUP BY fi.name
+    ORDER BY total_billed DESC
+  `).all(params)
 
-  // By class
-  const byClass = db.prepare(`SELECT c.name as class_name,
-    COALESCE(SUM(sb.amount),0) as total_billed,
-    COALESCE(SUM(p_total.paid),0) as total_paid
+  // By class — correct approach: aggregate bills and payments independently, then join
+  // Doing it in one query causes paid amounts to be multiplied by number of bill rows per student
+  const billsByClass = db.prepare(`
+    SELECT ss.class_id,
+      COALESCE(SUM(sb.amount), 0) as total_billed
     FROM student_bills sb
-    JOIN student_status ss ON ss.student_id=sb.student_id AND ss.term_id=sb.term_id
-    JOIN classes c ON c.id=ss.class_id
-    LEFT JOIN (SELECT student_id, term_id, SUM(amount_paid) as paid FROM payments GROUP BY student_id, term_id) p_total
-      ON p_total.student_id=sb.student_id AND p_total.term_id=sb.term_id
-    ${term_id ? 'WHERE sb.term_id=?' : ''}
-    GROUP BY c.name ORDER BY c.name`).all(params)
+    JOIN student_status ss ON ss.student_id = sb.student_id AND ss.term_id = sb.term_id
+    WHERE sb.status NOT IN ('waived','frozen')
+    ${term_id ? 'AND sb.term_id=?' : ''}
+    GROUP BY ss.class_id
+  `).all(params)
 
-  // Payment methods breakdown
-  const byMethod = db.prepare(`SELECT payment_method, COUNT(*) as count,
-    SUM(amount_paid) as total
-    FROM payments ${term_id ? 'WHERE term_id=?' : ''}
-    GROUP BY payment_method`).all(params)
+  const paidByClass = db.prepare(`
+    SELECT ss.class_id,
+      COALESCE(SUM(p.amount_paid), 0) as total_paid
+    FROM payments p
+    JOIN student_status ss ON ss.student_id = p.student_id AND ss.term_id = p.term_id
+    WHERE p.is_reversed = 0 AND p.amount_paid > 0
+    ${term_id ? 'AND p.term_id=?' : ''}
+    GROUP BY ss.class_id
+  `).all(params)
 
-  return { byFeeItem, byClass, byMethod }
+  // Join by class_id and get class name
+  const classNames = db.prepare('SELECT id, name FROM classes').all()
+  const classMap = new Map(classNames.map(c => [c.id, c.name]))
+  const paidMap  = new Map(paidByClass.map(r => [r.class_id, r.total_paid]))
+
+  const byClass = billsByClass.map(r => ({
+    class_name:   classMap.get(r.class_id) || `Class ${r.class_id}`,
+    total_billed: Number(r.total_billed),
+    total_paid:   Number(paidMap.get(r.class_id) || 0),
+  })).sort((a, b) => a.class_name.localeCompare(b.class_name))
+
+  // Payment methods — exclude reversed payments
+  const byMethod = db.prepare(`
+    SELECT payment_method,
+      COUNT(*) as count,
+      SUM(amount_paid) as total
+    FROM payments
+    WHERE is_reversed = 0
+      AND amount_paid > 0
+    ${term_id ? 'AND term_id=?' : ''}
+    GROUP BY payment_method
+    ORDER BY total DESC
+  `).all(params)
+
+  // Overall totals — computed correctly from same filtered sources
+  const totalBilled  = byClass.reduce((s, r) => s + Number(r.total_billed), 0)
+  const totalPaid    = byClass.reduce((s, r) => s + Number(r.total_paid),   0)
+
+  return { byFeeItem, byClass, byMethod, totalBilled, totalPaid, balance: totalBilled - totalPaid }
 })
 
 
