@@ -7,7 +7,7 @@ import { PageHeader, Modal, Confirm, Field, Spinner, StatusBadge } from '../../c
 const TERM_ORDER = ['First Term', 'Second Term', 'Third Term']
 
 // ─── Term dates editor (inline) ──────────────────────────────────────────────
-function TermRow({ term, isCurrent, onSetCurrent, sessionIsCurrent }) {
+function TermRow({ term, isCurrent, onSetCurrent }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving]   = useState(false)
   const { register, handleSubmit, reset } = useForm({
@@ -46,7 +46,7 @@ function TermRow({ term, isCurrent, onSetCurrent, sessionIsCurrent }) {
           >
             {editing ? 'Cancel' : 'Set dates'}
           </button>
-          {sessionIsCurrent && !isCurrent && (
+          {!isCurrent && (
             <button
               className="btn-primary btn btn-sm"
               onClick={() => onSetCurrent(term.id)}
@@ -129,14 +129,13 @@ function SessionCard({ session, currentTermId, onSetCurrent, onDelete, onRefresh
                     term={term}
                     isCurrent={term.id === currentTermId}
                     onSetCurrent={handleSetCurrent}
-                    sessionIsCurrent={session.is_current === 1}
                   />
                 )
               })
           }
-          {loaded && session.is_current !== 1 && (
+          {loaded && terms.length === 0 && (
             <p className="text-xs text-gray-400 text-center pt-1">
-              To set a term as current, first make this the active session by setting any of its terms.
+              No terms found for this session.
             </p>
           )}
         </div>

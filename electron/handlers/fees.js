@@ -5,7 +5,7 @@ function getAutoRecalc() {
   try { return require('./billing').autoRecalcStudentBills } catch { return null }
 }
 
-// Recalculate bills for every active student in a class/term — called after config changes
+// Recalculate which bill lines exist for every active student in a class/term
 function recalcWholeClass(db, class_id, term_id) {
   const autoRecalc = getAutoRecalc()
   if (!autoRecalc) return
@@ -18,6 +18,21 @@ function recalcWholeClass(db, class_id, term_id) {
       autoRecalc(db, student_id, term_id)
       db.exec('COMMIT')
     } catch(e) { try { db.exec('ROLLBACK') } catch {} }
+  }
+}
+
+// Sync amounts on existing PENDING bills when config amount changes.
+// Only safe to call when no payments exist yet (config is still a draft).
+function syncAmountsForClass(db, class_id, term_id) {
+  // First recalc which lines exist (adds/removes based on rules)
+  recalcWholeClass(db, class_id, term_id)
+  // Then sync amounts on remaining pending bills to match current config
+  const configs = db.prepare('SELECT * FROM bill_config WHERE class_id=? AND term_id=?').all([class_id, term_id])
+  for (const config of configs) {
+    db.prepare(`
+      UPDATE student_bills SET amount=?, is_compulsory=?
+      WHERE bill_config_id=? AND term_id=? AND status='pending'
+    `).run([config.amount, config.is_compulsory, config.id, term_id])
   }
 }
 
@@ -102,53 +117,47 @@ ipcMain.handle('bill-config:upsert', (_, data) => {
     boarding_rule = 'all', is_compulsory = 1, is_active = 1
   } = data
 
-  // Determine which term this config belongs to
+  // Determine the target term
   const targetTermId = id
     ? db.prepare('SELECT term_id FROM bill_config WHERE id=?').get(id)?.term_id
     : term_id
 
-  // Lock: bill config for a current or past term cannot be edited
-  // (bills are already generated — use adjustments for corrections)
-  const targetTerm = db.prepare('SELECT * FROM terms WHERE id=?').get(targetTermId)
+  // ── Lock rule: payment-triggered, not date-triggered ──────────────────────
+  // A past term (not current, not future) is always fully locked.
+  // A current or future term is locked only once the first payment exists in it.
+  // Before any payment: config is a draft — freely editable, amounts sync to bills.
+  // After first payment: amounts are reconciled — only adjustments allowed.
   const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
-  const isCurrentOrPast = targetTerm && currentTerm && (
-    targetTerm.id === currentTerm.id ||
-    targetTerm.id < currentTerm.id
-  )
-  if (isCurrentOrPast && id) {
-    // Editing existing config in a current/past term — blocked
+  const isPastTerm  = currentTerm && targetTermId < currentTerm.id
+  const hasPayment  = db.prepare(
+    'SELECT id FROM payments WHERE term_id=? AND is_reversed=0 LIMIT 1'
+  ).get(targetTermId)
+
+  if (isPastTerm) {
+    throw new Error('Past term fee configuration cannot be changed. Use adjustments for individual student corrections.')
+  }
+  if (hasPayment) {
     throw new Error(
-      'Fee configuration for a current or past term cannot be edited. ' +
-      'Bills have already been generated. Use adjustments on individual student bills instead.'
+      'Payments have already been recorded for this term. ' +
+      'Fee configuration is now locked to protect reconciliation. ' +
+      'Use adjustments on individual student bills for corrections.'
     )
   }
 
+  // No payments yet — config is a draft, freely editable
   if (id) {
-    // Future term config update — allowed freely
     const existing = db.prepare('SELECT class_id, term_id FROM bill_config WHERE id=?').get(id)
     db.prepare(`UPDATE bill_config SET amount=?, gender_rule=?, student_type_rule=?,
       boarding_rule=?, is_compulsory=?, is_active=? WHERE id=?`)
       .run([amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active, id])
-    // Recalculate future term students (adds/removes lines only, no amount sync)
-    recalcWholeClass(db, existing?.class_id || class_id, existing?.term_id || term_id)
+    // Sync amounts on all existing pending bills — config is still a draft
+    syncAmountsForClass(db, existing?.class_id || class_id, existing?.term_id || term_id)
     return { id }
   } else {
-    // New config — only allow for current term if no bills exist yet, or future terms
-    const hasBills = isCurrentOrPast
-      ? db.prepare('SELECT COUNT(*) as n FROM student_bills WHERE term_id=?').get(targetTermId)?.n > 0
-      : false
-    if (hasBills) {
-      throw new Error(
-        'Bills have already been generated for this term. ' +
-        'Adding new fee items after bills are generated is not allowed. ' +
-        'Use adjustments on individual students for one-off additions.'
-      )
-    }
     const info = db.prepare(`INSERT INTO bill_config
       (term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active)
       VALUES (?,?,?,?,?,?,?,?,?)`)
       .run([term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active])
-    // Generate bills for eligible students in this class/term
     recalcWholeClass(db, class_id, term_id)
     return { id: info.lastInsertRowid }
   }
@@ -159,14 +168,20 @@ ipcMain.handle('bill-config:delete', (_, id) => {
   const db = getDb()
   const config = db.prepare('SELECT * FROM bill_config WHERE id=?').get(id)
   if (!config) throw new Error('Config not found')
-  // Lock: if term is current or past, cannot delete config
+
   const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
-  if (currentTerm && config.term_id <= currentTerm.id) {
-    throw new Error('Fee configuration for a current or past term cannot be deleted. Deactivate it instead.')
-  }
+  const isPastTerm  = currentTerm && config.term_id < currentTerm.id
+  if (isPastTerm) throw new Error('Past term fee configuration cannot be deleted.')
+
+  const hasPayment = db.prepare(
+    'SELECT id FROM payments WHERE term_id=? AND is_reversed=0 LIMIT 1'
+  ).get(config.term_id)
+  if (hasPayment) throw new Error('Cannot delete — payments have been recorded for this term. Deactivate the fee item instead.')
+
   db.prepare('DELETE FROM bill_config WHERE id=?').run(id)
   return { ok: true }
 })
+
 
 ipcMain.handle('bill-config:copy', (_, { from_term_id, from_class_id, to_term_id, to_class_id, overwrite = false }) => {
   const db = getDb()

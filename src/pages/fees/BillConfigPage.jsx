@@ -119,6 +119,7 @@ export default function BillConfigPage() {
   const [classes, setClasses]         = useState([])
   const [feeItems, setFeeItems]       = useState([])
   const [currentTermId, setCurrentTermId] = useState(null)
+  const [termLockState, setTermLockState] = useState({}) // termId → { locked, reason }
   const [terms, setTerms]             = useState([])
   const [configs, setConfigs]         = useState([])
   const [loading, setLoading]         = useState(false)
@@ -241,14 +242,14 @@ export default function BillConfigPage() {
         <div className="flex gap-1 justify-end">
           <button className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
             onClick={e => { e.stopPropagation(); setEditing(row); setShowModal(true) }}
-            disabled={isTermLocked}
-            title={isTermLocked ? 'Locked — current/past term config cannot be edited' : 'Edit'}>
+            disabled={isPastTerm}
+            title={isPastTerm ? 'Past term — cannot edit' : 'Edit'}>
             <Pencil size={12} />
           </button>
           <button className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
             onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
-            disabled={isTermLocked}
-            title={isTermLocked ? 'Locked — current/past term config cannot be deleted' : 'Delete'}>
+            disabled={isPastTerm}
+            title={isPastTerm ? 'Past term — cannot delete' : 'Delete'}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -256,8 +257,12 @@ export default function BillConfigPage() {
     }
   ]
 
-  const isTermLocked = currentTermId !== null && Number(selTerm) <= currentTermId
-  const canAdd = selTerm && selClass && !isTermLocked
+  // Past terms are always locked in the UI.
+  // Current/future terms: lock state is determined by whether payments exist
+  // (backend enforces this — UI shows it after a failed save attempt).
+  const isPastTerm   = currentTermId !== null && Number(selTerm) < currentTermId
+  const isTermLocked = isPastTerm
+  const canAdd       = selTerm && selClass && !isPastTerm
 
   return (
     <div>
@@ -302,13 +307,13 @@ export default function BillConfigPage() {
         </div>
       </div>
 
-      {/* Lock banner for current/past terms */}
-      {selTerm && selClass && isTermLocked && (
-        <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 flex items-center gap-3">
-          <span className="text-amber-500 text-lg">🔒</span>
+      {/* Lock banner for past terms */}
+      {selTerm && selClass && isPastTerm && (
+        <div className="mb-4 p-4 rounded-xl bg-gray-50 border border-gray-300 flex items-center gap-3">
+          <span className="text-gray-500 text-lg">🔒</span>
           <div>
-            <p className="font-semibold text-amber-800 text-sm">This term's configuration is locked.</p>
-            <p className="text-amber-700 text-xs mt-0.5">Bills have already been generated. Fee config for current and past terms cannot be edited. To correct a student's bill, use adjustments on their individual bill page.</p>
+            <p className="font-semibold text-gray-700 text-sm">Past term — read only.</p>
+            <p className="text-gray-500 text-xs mt-0.5">Fee configuration for past terms cannot be changed. To correct a student's bill from a past term, use adjustments on their individual bill page.</p>
           </div>
         </div>
       )}
