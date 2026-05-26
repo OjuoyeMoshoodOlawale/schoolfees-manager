@@ -4,7 +4,6 @@ import { Shield, Download, Printer, Loader } from 'lucide-react'
 import { PageHeader, Spinner, SearchInput, exportToExcel } from '../../components/ui'
 import { printCleanHtml, fmtDate } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
-import { fmtDate } from '../../lib/utils'
 
 export default function PaymentAuditPage() {
   const { fmt } = useAuth()
