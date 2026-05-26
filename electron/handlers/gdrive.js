@@ -104,10 +104,20 @@ ipcMain.handle('gdrive:save-credentials', (_, { client_id, client_secret }) => {
 })
 
 // ── OAuth connect flow ────────────────────────────────────────────────────────
+// Track active OAuth server so we can kill it before starting a new one
+let _activeOAuthServer = null
+
 ipcMain.handle('gdrive:connect', async () => {
   const cfg = loadConfig()
   if (!cfg?.client_id?.trim() || !cfg?.client_secret?.trim()) {
     return { ok: false, error: 'OAuth credentials are missing or incomplete. Open the "OAuth Credentials" section, enter your Client ID and Client Secret, click Save Credentials, then try connecting again.' }
+  }
+
+  // Kill any previous OAuth server that didn't clean up
+  if (_activeOAuthServer) {
+    try { _activeOAuthServer.close() } catch {}
+    _activeOAuthServer = null
+    await new Promise(r => setTimeout(r, 500))
   }
 
   const oauth2  = makeOAuth2Client(cfg)
@@ -115,51 +125,65 @@ ipcMain.handle('gdrive:connect', async () => {
     access_type: 'offline', scope: SCOPES, prompt: 'consent',
   })
 
+  console.log('[gdrive:connect] redirect_uri in authUrl:', new URL(authUrl).searchParams.get('redirect_uri'))
+  console.log('[gdrive:connect] client_id starts with:', cfg.client_id.slice(0, 20))
+
   return new Promise((resolve) => {
     let handled = false
 
+    const sendPage = (res, ok, title, body) => {
+      try {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+          <body style="font-family:Arial,sans-serif;text-align:center;padding:60px;background:#f8fafc">
+          <div style="max-width:480px;margin:0 auto;background:white;border-radius:12px;padding:40px;box-shadow:0 4px 16px rgba(0,0,0,.1)">
+          <h2 style="color:${ok?'#16a34a':'#dc2626'};margin-bottom:12px">${ok?'✓':'✗'} ${title}</h2>
+          <p style="color:#374151">${body}</p>
+          <p style="color:#9ca3af;font-size:13px;margin-top:20px">You can close this tab and return to SchoolFees Manager.</p>
+          </div></body></html>`)
+      } catch {}
+    }
+
     const server = http.createServer(async (req, res) => {
-      if (handled) return
+      // Ignore favicon requests
+      if (req.url === '/favicon.ico') { res.writeHead(204); res.end(); return }
+      if (handled) { res.writeHead(200); res.end('Already handled'); return }
       handled = true
+      _activeOAuthServer = null
 
       const parsed = url.parse(req.url, true)
       const code   = parsed.query.code
       const error  = parsed.query.error
 
-      const sendPage = (ok, title, body) => {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
-          <h2 style="color:${ok ? '#16a34a' : '#dc2626'}">${ok ? '✓' : '✗'} ${title}</h2>
-          <p>${body}</p><p>You can close this tab.</p></body></html>`)
-      }
-
-      // Log full redirect for debugging
-      console.log('[gdrive:connect] redirect received:', req.url)
-      console.log('[gdrive:connect] error param:', error, '| code present:', !!code)
+      console.log('[gdrive:connect] callback received — error:', error || 'none', '| code:', code ? code.slice(0,10)+'…' : 'MISSING')
 
       if (error || !code) {
-        const errMsg = error === 'access_denied'
-          ? 'Access was denied. Make sure you are signed in with a Google account and approved the permissions.'
-          : error || 'No authorisation code returned from Google.'
-        sendPage(false, 'Connection failed', errMsg)
+        const msg = error === 'access_denied'
+          ? 'You cancelled or denied access. Please try again and click Allow when Google asks for permission.'
+          : error === 'redirect_uri_mismatch'
+          ? 'Redirect URI mismatch. Make sure you selected Desktop app type when creating the OAuth client in Google Cloud Console.'
+          : `Google returned error: ${error || 'no authorisation code'}. Please try connecting again.`
+        sendPage(res, false, 'Connection failed', msg)
         server.close()
-        return resolve({ ok: false, error: errMsg })
+        return resolve({ ok: false, error: msg })
       }
 
       try {
         const { tokens } = await oauth2.getToken(code)
+        console.log('[gdrive:connect] tokens received — has refresh_token:', !!tokens.refresh_token)
+
         if (!tokens.refresh_token) {
-          // Token reuse — user already authorised before; revoke and retry
-          sendPage(false, 'No refresh token',
-            'Google did not return a refresh token. In Google Drive, go to your account → Security → Third-party apps → remove SchoolFees Manager, then try connecting again.')
+          sendPage(res, false, 'No refresh token',
+            'Google did not return a refresh token. Go to <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>, remove SchoolFees Manager, then try connecting again.')
           server.close()
-          return resolve({ ok: false, error: 'No refresh_token. Revoke the app in Google account and reconnect.' })
+          return resolve({ ok: false, error: 'No refresh_token returned. Revoke access at myaccount.google.com/permissions and reconnect.' })
         }
         oauth2.setCredentials(tokens)
 
         const people  = google.oauth2({ version: 'v2', auth: oauth2 })
         const info    = await people.userinfo.get()
         const email   = info.data.email
+        console.log('[gdrive:connect] signed in as:', email)
 
         const drive    = google.drive({ version: 'v3', auth: oauth2 })
         const existing = await drive.files.list({
@@ -174,20 +198,44 @@ ipcMain.handle('gdrive:connect', async () => {
             })).data.id
 
         saveToken({ ...tokens, email, folderId })
-        sendPage(true, 'SchoolFees Manager connected!', `Signed in as <strong>${email}</strong>`)
+        sendPage(res, true, 'Connected!', `SchoolFees Manager is now connected to Google Drive as <strong>${email}</strong>.`)
         server.close()
         resolve({ ok: true, email, folderId })
       } catch (e) {
-        sendPage(false, 'Connection error', e.message)
+        console.error('[gdrive:connect] error after code exchange:', e.message)
+        sendPage(res, false, 'Connection error', e.message)
         server.close()
         resolve({ ok: false, error: e.message })
       }
     })
 
-    console.log('[gdrive:connect] authUrl redirect_uri param:', new URL(authUrl).searchParams.get('redirect_uri'))
-    server.listen(REDIRECT_PORT, '127.0.0.1', () => shell.openExternal(authUrl))
-    server.on('error', (e) => resolve({ ok: false, error: `Could not start local server: ${e.message}` }))
-    setTimeout(() => { server.close(); resolve({ ok: false, error: 'Authentication timed out.' }) }, 3 * 60 * 1000)
+    _activeOAuthServer = server
+
+    server.listen(REDIRECT_PORT, '127.0.0.1', (err) => {
+      if (err) {
+        console.error('[gdrive:connect] server listen error:', err)
+        return resolve({ ok: false, error: `Port ${REDIRECT_PORT} is busy. Restart the app and try again.` })
+      }
+      console.log('[gdrive:connect] OAuth server listening on 127.0.0.1:' + REDIRECT_PORT)
+      shell.openExternal(authUrl)
+    })
+
+    server.on('error', (e) => {
+      console.error('[gdrive:connect] server error:', e.message)
+      _activeOAuthServer = null
+      resolve({ ok: false, error: e.code === 'EADDRINUSE'
+        ? `Port ${REDIRECT_PORT} is already in use. Restart SchoolFees Manager and try again.`
+        : `Server error: ${e.message}` })
+    })
+
+    setTimeout(() => {
+      if (!handled) {
+        console.log('[gdrive:connect] timed out')
+        server.close()
+        _activeOAuthServer = null
+        resolve({ ok: false, error: 'Authentication timed out after 3 minutes. Please try again.' })
+      }
+    }, 3 * 60 * 1000)
   })
 })
 
