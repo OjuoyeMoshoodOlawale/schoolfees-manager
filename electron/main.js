@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, Menu } = require('electron')
 const path = require('path')
 const fs   = require('fs')
 
@@ -211,7 +211,11 @@ function cleanDbLock() {
 }
 cleanDbLock() // Run immediately on startup — before DB opens
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Hide native menu bar in production — keep in dev for DevTools access
+  if (app.isPackaged) Menu.setApplicationMenu(null)
+  createWindow()
+})
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     require('./lib/database').closeDb()
