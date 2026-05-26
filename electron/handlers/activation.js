@@ -388,3 +388,32 @@ ipcMain.handle('activation:generate-payroll-key', (_, { school_name }) => {
   const key    = `PAY-${hash.slice(0,4).toUpperCase()}-${hash.slice(4,8).toUpperCase()}`
   return { ok: true, key, school_name }
 })
+
+// ── Inventory Module Unlock ───────────────────────────────────────────────────
+ipcMain.handle('activation:unlock-inventory', (_, { key }) => {
+  const crypto = require('crypto')
+  const db     = getDb()
+  const school = db.prepare('SELECT school_name FROM school_settings WHERE id=1').get()
+  const name   = (school?.school_name || '').toLowerCase().trim()
+  const SECRET = 'SF_INVENTORY_SECRET_2025_OJUOYE'
+  const hash   = crypto.createHmac('sha256', SECRET).update(name).digest('hex')
+  const expected  = `INV-${hash.slice(0,4).toUpperCase()}-${hash.slice(4,8).toUpperCase()}`
+  const normalized = (key || '').trim().toUpperCase()
+  const masterHash = crypto.createHmac('sha256', SECRET).update('master_inventory_unlock').digest('hex')
+  const masterKey  = `INV-${masterHash.slice(0,4).toUpperCase()}-${masterHash.slice(4,8).toUpperCase()}`
+  if (normalized !== expected && normalized !== masterKey)
+    return { ok: false, error: 'Incorrect key. Contact your SchoolFees Manager agent to obtain an inventory unlock key.' }
+  db.prepare("INSERT OR REPLACE INTO app_state (key, value) VALUES ('inventory_enabled', '1')").run([])
+  db.prepare("UPDATE school_settings SET inventory_enabled=1 WHERE id=1").run([])
+  return { ok: true }
+})
+
+ipcMain.handle('activation:generate-inventory-key', (_, { school_name }) => {
+  const crypto = require('crypto')
+  const isDev  = process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged
+  if (!isDev) return { ok: false, error: 'Dev mode only' }
+  const SECRET = 'SF_INVENTORY_SECRET_2025_OJUOYE'
+  const name   = (school_name || '').toLowerCase().trim()
+  const hash   = crypto.createHmac('sha256', SECRET).update(name).digest('hex')
+  return { ok: true, key: `INV-${hash.slice(0,4).toUpperCase()}-${hash.slice(4,8).toUpperCase()}`, school_name }
+})

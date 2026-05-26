@@ -94,6 +94,7 @@ function initSchema() {
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('setup_complete','0');
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('accounting_enabled','0');
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('payroll_enabled','0');
+    INSERT OR IGNORE INTO app_state (key,value) VALUES ('inventory_enabled','0');
 
     CREATE TABLE IF NOT EXISTS activation (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -559,6 +560,47 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(staff_id, date)
     );
+
+    -- ── INVENTORY MODULE ─────────────────────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS inventory_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sku TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      category_id INTEGER REFERENCES inventory_categories(id),
+      unit TEXT NOT NULL DEFAULT 'piece'
+                CHECK (unit IN ('piece','pack','box','ream','litre','kg','metre','pair','set','carton','bottle','other')),
+      cost_price REAL NOT NULL DEFAULT 0,
+      selling_price REAL NOT NULL DEFAULT 0,
+      quantity_on_hand REAL NOT NULL DEFAULT 0,
+      reorder_level REAL NOT NULL DEFAULT 5,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK (type IN ('purchase','sale','issue','adjustment','return')),
+      quantity REAL NOT NULL,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total_value REAL NOT NULL DEFAULT 0,
+      reference TEXT DEFAULT '',
+      notes TEXT DEFAULT '',
+      supplier_id INTEGER REFERENCES suppliers(id),
+      transaction_date TEXT NOT NULL DEFAULT (date('now')),
+      recorded_by TEXT DEFAULT 'admin',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 }
 
@@ -576,6 +618,7 @@ function migrateSchema() {
     "ALTER TABLE school_settings ADD COLUMN auto_send_receipt INTEGER DEFAULT 1",
     "ALTER TABLE school_settings ADD COLUMN auto_send_email_receipt INTEGER DEFAULT 1",
     "ALTER TABLE school_settings ADD COLUMN payroll_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE school_settings ADD COLUMN inventory_enabled INTEGER DEFAULT 0",
     "ALTER TABLE sms_log   ADD COLUMN error_reason TEXT DEFAULT ''",
     "ALTER TABLE email_log ADD COLUMN error_reason TEXT DEFAULT ''",
   ]
@@ -631,6 +674,10 @@ function seedDefaults() {
 
   // Seed default expense categories (linked to account by code)
   const insertCat = db.prepare('INSERT OR IGNORE INTO expense_categories (name, account_id) VALUES (?,?)')
+  // Seed default inventory categories
+  const insertInvCat = db.prepare('INSERT OR IGNORE INTO inventory_categories (name) VALUES (?)')
+  for (const name of defaults.inventoryCategories) insertInvCat.run([name])
+
   for (const c of defaults.expenseCategories) {
     const acct = db.prepare('SELECT id FROM accounts WHERE code=?').get([c.account_code])
     insertCat.run([c.name, acct?.id || null])

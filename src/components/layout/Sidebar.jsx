@@ -8,7 +8,8 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
   Briefcase, UserCog, Play, Minus,
-  ShoppingBag, Tag, Truck, PieChart
+  ShoppingBag, Tag, Truck, PieChart,
+  Package, BarChart2 as BarChartIcon, Archive
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -92,6 +93,14 @@ const NAV_GROUPS = [
     ]
   },
   {
+    section: 'Inventory',
+    inventory: true,
+    items: [
+      { to: '/inventory',        icon: Package,       label: 'Stock Catalogue' },
+      { to: '/inventory/report', icon: BarChartIcon,  label: 'Valuation Report' },
+    ]
+  },
+  {
     section: 'Setup',
     items: [
       { to: '/sessions', icon: Calendar, label: 'Sessions & Terms' },
@@ -110,10 +119,11 @@ function NavItem({ to, icon: Icon, label, exact }) {
   )
 }
 
-function NavGroup({ section, items, accounting, accountingEnabled, payroll, payrollEnabled }) {
+function NavGroup({ section, items, accounting, accountingEnabled, payroll, payrollEnabled, inventory, inventoryEnabled }) {
   const [open, setOpen] = useState(true)
   if (accounting && !accountingEnabled) return null
   if (payroll    && !payrollEnabled)    return null
+  if (inventory  && !inventoryEnabled)  return null
   return (
     <div className="mb-1">
       {section && (
@@ -136,6 +146,7 @@ export default function Sidebar() {
   const [logoPath, setLogoPath]       = useState('')
   const [accounting, setAccounting]   = useState(false)
   const [payrollOn,  setPayrollOn]    = useState(false)
+  const [inventoryOn, setInventoryOn] = useState(false)
 
   useEffect(() => {
     window.api?.getSettings().then(s => {
@@ -143,6 +154,7 @@ export default function Sidebar() {
       if (s?.logo_path)   setLogoPath(s.logo_path)
       if (s?.accounting_enabled) setAccounting(!!s.accounting_enabled)
       if (s?.payroll_enabled)    setPayrollOn(!!s.payroll_enabled)
+      if (s?.inventory_enabled)  setInventoryOn(!!s.inventory_enabled)
     })
     window.api?.getCurrentTerm().then(t => setCurrentTerm(t))
   }, [])
@@ -190,6 +202,8 @@ export default function Sidebar() {
             accountingEnabled={accounting}
             payroll={group.payroll}
             payrollEnabled={payrollOn}
+            inventory={group.inventory}
+            inventoryEnabled={inventoryOn}
           />
         ))}
       </nav>

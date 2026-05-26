@@ -20,6 +20,8 @@ export default function DevSettingsPage() {
   const [acctKey, setAcctKey]           = useState('')
   const [payKeyName, setPayKeyName]     = useState('')
   const [payKey, setPayKey]             = useState('')
+  const [invKeyName, setInvKeyName]     = useState('')
+  const [invKey, setInvKey]             = useState('')
 
   useEffect(() => {
     // Only developer can access this page
@@ -285,6 +287,34 @@ export default function DevSettingsPage() {
                   onClick={() => { navigator.clipboard.writeText(payKey); toast.success('Copied!') }}>
                   Copy
                 </button>
+              </div>
+            )}
+            <p className="text-xs text-gray-400">⚠️ School name must match Settings → School Info exactly.</p>
+          </div>
+        </div>
+
+        {/* Inventory Key Generator */}
+        <div className="card">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Shield size={14} className="text-blue-500" /> Generate Inventory Unlock Key
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">Generate a school-specific INV-XXXX-XXXX key to unlock the inventory module for a client.</p>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input className="form-input text-sm flex-1" placeholder="Enter exact school name"
+                value={invKeyName} onChange={e => setInvKeyName(e.target.value)}/>
+              <button className="btn btn-secondary btn-sm whitespace-nowrap"
+                onClick={async () => {
+                  if (!invKeyName.trim()) return
+                  const r = await window.api.generateInventoryKey({ school_name: invKeyName })
+                  if (r.ok) setInvKey(r.key); else toast.error(r.error)
+                }}>Generate</button>
+            </div>
+            {invKey && (
+              <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="font-mono font-bold text-blue-800 tracking-widest text-lg flex-1">{invKey}</span>
+                <button className="btn btn-secondary btn-sm"
+                  onClick={() => { navigator.clipboard.writeText(invKey); toast.success('Copied!') }}>Copy</button>
               </div>
             )}
             <p className="text-xs text-gray-400">⚠️ School name must match Settings → School Info exactly.</p>

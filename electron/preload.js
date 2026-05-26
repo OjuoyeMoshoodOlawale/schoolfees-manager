@@ -146,6 +146,22 @@ contextBridge.exposeInMainWorld('api', {
   updateInvoiceStatus:(d)    => ipcRenderer.invoke('invoices:update-status', d),
   deleteInvoice:      (id)   => ipcRenderer.invoke('invoices:delete', id),
 
+  // ── Inventory
+  inventoryCategoriesList: ()     => ipcRenderer.invoke('inventory:categories-list'),
+  inventoryCategorySave:   (d)    => ipcRenderer.invoke('inventory:category-save', d),
+  inventoryCategoryDelete: (id)   => ipcRenderer.invoke('inventory:category-delete', id),
+  inventoryItemsList:      (d)    => ipcRenderer.invoke('inventory:items-list', d),
+  inventoryItemGet:        (id)   => ipcRenderer.invoke('inventory:item-get', id),
+  inventoryItemSave:       (d)    => ipcRenderer.invoke('inventory:item-save', d),
+  inventoryItemDelete:     (id)   => ipcRenderer.invoke('inventory:item-delete', id),
+  inventoryTransactionsList:(d)   => ipcRenderer.invoke('inventory:transactions-list', d),
+  inventoryTransact:       (d)    => ipcRenderer.invoke('inventory:transact', d),
+  inventoryTransactionDelete:(id) => ipcRenderer.invoke('inventory:transaction-delete', id),
+  inventoryLowStock:       ()     => ipcRenderer.invoke('inventory:low-stock'),
+  inventoryValuation:      (d)    => ipcRenderer.invoke('inventory:valuation', d),
+  unlockInventory:         (d)    => ipcRenderer.invoke('activation:unlock-inventory', d),
+  generateInventoryKey:    (d)    => ipcRenderer.invoke('activation:generate-inventory-key', d),
+
   // ── Expenses
   expenseSuppliersList:   (d)    => ipcRenderer.invoke('expenses:suppliers-list', d),
   expenseSupplierSave:    (d)    => ipcRenderer.invoke('expenses:supplier-save', d),

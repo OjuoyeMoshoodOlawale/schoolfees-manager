@@ -51,6 +51,19 @@ module.exports = {
     { code: '3001', name: 'Retained Earnings',    type: 'equity',   group: 'Equity' },
   ],
 
+  inventoryCategories: [
+    'Stationery & Books',
+    'Uniforms & Clothing',
+    'Food & Beverages',
+    'Cleaning Supplies',
+    'Lab Equipment',
+    'Sports Equipment',
+    'Office Supplies',
+    'Furniture & Fittings',
+    'Electronics',
+    'Other',
+  ],
+
   // Default expense categories (seeded on first run)
   expenseCategories: [
     { name: 'Salaries & Wages',      account_code: '5001' },

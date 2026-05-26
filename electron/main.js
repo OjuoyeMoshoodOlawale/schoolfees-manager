@@ -49,6 +49,7 @@ require('./handlers/communications')()
 require('./handlers/accounting')()
 require('./handlers/payroll')
 require('./handlers/expenses')
+require('./handlers/inventory')
 
 // ── Start auto-backup scheduler ───────────────────────────────────────────────
 const { startScheduler } = require('./lib/scheduler')

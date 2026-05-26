@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash, Briefcase } from 'lucide-react'
+import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash, Briefcase, Archive } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import RegNumberTab from './RegNumberTab'
 import AccountingTab from './AccountingTab'
 import PayrollTab from './PayrollTab'
+import InventoryTab from './InventoryTab'
 
 const TABS = [
   { id: 'school',       label: 'School Info',   icon: Building2 },
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'email',        label: 'Email',         icon: Mail },
   { id: 'accounting',   label: 'Accounting',    icon: Key },
   { id: 'payroll',      label: 'Payroll',       icon: Briefcase },
+  { id: 'inventory',    label: 'Inventory',     icon: Archive },
   { id: 'backup',       label: 'Backup',        icon: Bell },
 ]
 
@@ -36,6 +38,8 @@ export default function SettingsPage() {
   const [unlocking, setUnlocking] = useState(false)
   const [payrollUnlockKey, setPayrollUnlockKey] = useState('')
   const [payrollUnlocking, setPayrollUnlocking] = useState(false)
+  const [inventoryUnlockKey, setInventoryUnlockKey] = useState('')
+  const [inventoryUnlocking, setInventoryUnlocking] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors, isDirty } } = useForm()
 
@@ -387,6 +391,16 @@ export default function SettingsPage() {
             setUnlockKey={setPayrollUnlockKey}
             unlocking={payrollUnlocking}
             setUnlocking={setPayrollUnlocking}
+            refreshSettings={refreshSettings}
+          />
+        )}
+
+        {tab === 'inventory' && (
+          <InventoryTab
+            unlockKey={inventoryUnlockKey}
+            setUnlockKey={setInventoryUnlockKey}
+            unlocking={inventoryUnlocking}
+            setUnlocking={setInventoryUnlocking}
             refreshSettings={refreshSettings}
           />
         )}

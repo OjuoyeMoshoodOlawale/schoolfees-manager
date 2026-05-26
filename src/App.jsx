@@ -58,6 +58,8 @@ import ExpensesPage            from './pages/expenses/ExpensesPage'
 import ExpenseCategoriesPage   from './pages/expenses/ExpenseCategoriesPage'
 import SuppliersPage           from './pages/expenses/SuppliersPage'
 import ExpenseReportPage       from './pages/expenses/ExpenseReportPage'
+import InventoryPage           from './pages/inventory/InventoryPage'
+import InventoryReportPage     from './pages/inventory/InventoryReportPage'
 
 // ─── Auth Gate ───────────────────────────────────────────────────────────────
 function AuthGate() {
@@ -165,6 +167,8 @@ function MainApp() {
           <Route path="/expenses/categories"       element={<ExpenseCategoriesPage />} />
           <Route path="/expenses/suppliers"        element={<SuppliersPage />} />
           <Route path="/expenses/report"           element={<ExpenseReportPage />} />
+          <Route path="/inventory"                 element={<InventoryPage />} />
+          <Route path="/inventory/report"           element={<InventoryReportPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />
