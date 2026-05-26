@@ -25,6 +25,11 @@
 const { ipcMain } = require('electron')
 const { getDb }   = require('../lib/database')
 
+function checkPayroll() {
+  const enabled = getDb().prepare("SELECT value FROM app_state WHERE key='payroll_enabled'").get()?.value
+  if (enabled !== '1') throw new Error('Payroll module is not enabled for this installation.')
+}
+
 // ── PAYE calculation (annual → monthly) ──────────────────────────────────────
 function computePAYE(monthlyGross) {
   const annual = monthlyGross * 12
@@ -70,6 +75,7 @@ ipcMain.handle('payroll:grades-list', () => {
 })
 
 ipcMain.handle('payroll:grade-save', (_, d) => {
+  checkPayroll()
   const db = getDb()
   if (d.id) {
     db.prepare(`UPDATE salary_grades SET name=?,basic_salary=?,housing_allowance=?,
@@ -87,6 +93,7 @@ ipcMain.handle('payroll:grade-save', (_, d) => {
 })
 
 ipcMain.handle('payroll:grade-delete', (_, id) => {
+  checkPayroll()
   const used = getDb().prepare('SELECT COUNT(*) as n FROM staff WHERE salary_grade_id=?').get([id])?.n || 0
   if (used > 0) throw new Error(`Grade is assigned to ${used} staff member(s). Reassign first.`)
   getDb().prepare('DELETE FROM salary_grades WHERE id=?').run([id])
@@ -109,6 +116,7 @@ ipcMain.handle('payroll:staff-get', (_, id) => {
 })
 
 ipcMain.handle('payroll:staff-save', (_, d) => {
+  checkPayroll()
   const db = getDb()
   // Auto-generate staff number if not provided
   if (!d.staff_number) {
@@ -132,6 +140,7 @@ ipcMain.handle('payroll:staff-save', (_, d) => {
 })
 
 ipcMain.handle('payroll:staff-toggle-active', (_, id) => {
+  checkPayroll()
   const db   = getDb()
   const curr = db.prepare('SELECT is_active FROM staff WHERE id=?').get([id])
   if (!curr) throw new Error('Staff not found')
@@ -148,6 +157,7 @@ ipcMain.handle('payroll:deductions-list', (_, { staff_id }) => {
 })
 
 ipcMain.handle('payroll:deduction-save', (_, d) => {
+  checkPayroll()
   const db = getDb()
   if (d.id) {
     db.prepare('UPDATE payroll_deductions SET name=?,amount=?,is_recurring=?,month=?,year=?,notes=? WHERE id=?')
@@ -160,6 +170,7 @@ ipcMain.handle('payroll:deduction-save', (_, d) => {
 })
 
 ipcMain.handle('payroll:deduction-delete', (_, id) => {
+  checkPayroll()
   getDb().prepare('DELETE FROM payroll_deductions WHERE id=?').run([id])
   return { ok: true }
 })
@@ -230,6 +241,7 @@ ipcMain.handle('payroll:run-preview', (_, { month, year }) => {
 
 // Create/run payroll
 ipcMain.handle('payroll:run-create', (_, { month, year, notes = '', created_by = 'admin' }) => {
+  checkPayroll()
   const db = getDb()
 
   // Check duplicate
@@ -308,6 +320,7 @@ ipcMain.handle('payroll:run-create', (_, { month, year, notes = '', created_by =
 })
 
 ipcMain.handle('payroll:run-approve', (_, { id, approved_by }) => {
+  checkPayroll()
   const db  = getDb()
   const run = db.prepare('SELECT status FROM payroll_runs WHERE id=?').get([id])
   if (!run) throw new Error('Payroll run not found')
@@ -318,6 +331,7 @@ ipcMain.handle('payroll:run-approve', (_, { id, approved_by }) => {
 })
 
 ipcMain.handle('payroll:run-mark-paid', (_, id) => {
+  checkPayroll()
   const db  = getDb()
   const run = db.prepare('SELECT status FROM payroll_runs WHERE id=?').get([id])
   if (!run) throw new Error('Payroll run not found')
@@ -327,6 +341,7 @@ ipcMain.handle('payroll:run-mark-paid', (_, id) => {
 })
 
 ipcMain.handle('payroll:run-delete', (_, id) => {
+  checkPayroll()
   const db  = getDb()
   const run = db.prepare('SELECT status FROM payroll_runs WHERE id=?').get([id])
   if (!run) throw new Error('Payroll run not found')

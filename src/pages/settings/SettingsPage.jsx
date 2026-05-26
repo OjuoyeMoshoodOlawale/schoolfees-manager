@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash } from 'lucide-react'
+import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash, Briefcase } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import RegNumberTab from './RegNumberTab'
 import AccountingTab from './AccountingTab'
+import PayrollTab from './PayrollTab'
 
 const TABS = [
   { id: 'school',       label: 'School Info',   icon: Building2 },
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'sms',          label: 'SMS',           icon: MessageSquare },
   { id: 'email',        label: 'Email',         icon: Mail },
   { id: 'accounting',   label: 'Accounting',    icon: Key },
+  { id: 'payroll',      label: 'Payroll',       icon: Briefcase },
   { id: 'backup',       label: 'Backup',        icon: Bell },
 ]
 
@@ -32,6 +34,8 @@ export default function SettingsPage() {
   const [testingEmail, setTestingEmail] = useState(false)
   const [unlockKey, setUnlockKey] = useState('')
   const [unlocking, setUnlocking] = useState(false)
+  const [payrollUnlockKey, setPayrollUnlockKey] = useState('')
+  const [payrollUnlocking, setPayrollUnlocking] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors, isDirty } } = useForm()
 
@@ -373,6 +377,16 @@ export default function SettingsPage() {
             setUnlockKey={setUnlockKey}
             unlocking={unlocking}
             setUnlocking={setUnlocking}
+            refreshSettings={refreshSettings}
+          />
+        )}
+
+        {tab === 'payroll' && (
+          <PayrollTab
+            unlockKey={payrollUnlockKey}
+            setUnlockKey={setPayrollUnlockKey}
+            unlocking={payrollUnlocking}
+            setUnlocking={setPayrollUnlocking}
             refreshSettings={refreshSettings}
           />
         )}

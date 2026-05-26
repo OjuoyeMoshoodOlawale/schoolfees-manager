@@ -93,6 +93,7 @@ function initSchema() {
     );
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('setup_complete','0');
     INSERT OR IGNORE INTO app_state (key,value) VALUES ('accounting_enabled','0');
+    INSERT OR IGNORE INTO app_state (key,value) VALUES ('payroll_enabled','0');
 
     CREATE TABLE IF NOT EXISTS activation (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -527,6 +528,37 @@ function initSchema() {
       journal_entry_id INTEGER REFERENCES journal_entries(id),
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- ── ATTENDANCE MODULE ────────────────────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS attendance_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      class_id   INTEGER NOT NULL REFERENCES classes(id),
+      term_id    INTEGER NOT NULL REFERENCES terms(id),
+      date       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'present'
+                   CHECK (status IN ('present','absent','late','excused')),
+      notes      TEXT DEFAULT '',
+      recorded_by TEXT DEFAULT 'admin',
+      sms_sent   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(student_id, date)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_attendance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id   INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      date       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'present'
+                   CHECK (status IN ('present','absent','late','half_day')),
+      time_in    TEXT DEFAULT '',
+      time_out   TEXT DEFAULT '',
+      notes      TEXT DEFAULT '',
+      recorded_by TEXT DEFAULT 'admin',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(staff_id, date)
+    );
   `)
 }
 
@@ -543,6 +575,7 @@ function migrateSchema() {
     "ALTER TABLE school_settings ADD COLUMN reg_seq_reset TEXT DEFAULT 'year'",
     "ALTER TABLE school_settings ADD COLUMN auto_send_receipt INTEGER DEFAULT 1",
     "ALTER TABLE school_settings ADD COLUMN auto_send_email_receipt INTEGER DEFAULT 1",
+    "ALTER TABLE school_settings ADD COLUMN payroll_enabled INTEGER DEFAULT 0",
     "ALTER TABLE sms_log   ADD COLUMN error_reason TEXT DEFAULT ''",
     "ALTER TABLE email_log ADD COLUMN error_reason TEXT DEFAULT ''",
   ]

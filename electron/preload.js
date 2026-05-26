@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('api', {
   activateLicense:    (d)    => ipcRenderer.invoke('activation:activate', d),
   getMachineId:       ()     => ipcRenderer.invoke('activation:get-machine-id'),
   unlockAccounting:   (d)    => ipcRenderer.invoke('activation:unlock-accounting', d),
+  unlockPayroll:      (d)    => ipcRenderer.invoke('activation:unlock-payroll', d),
+  generatePayrollKey: (d)    => ipcRenderer.invoke('activation:generate-payroll-key', d),
   generateAccountingKey:(d)  => ipcRenderer.invoke('activation:generate-accounting-key', d),
   getAppState:        (k)    => ipcRenderer.invoke('app-state:get', k),
   setAppState:        (k,v)  => ipcRenderer.invoke('app-state:set', k, v),

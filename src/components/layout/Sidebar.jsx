@@ -74,6 +74,7 @@ const NAV_GROUPS = [
   },
   {
     section: 'Payroll',
+    payroll: true,
     items: [
       { to: '/payroll/run',        icon: Play,      label: 'Run Payroll' },
       { to: '/payroll/staff',      icon: Briefcase, label: 'Staff' },
@@ -109,9 +110,10 @@ function NavItem({ to, icon: Icon, label, exact }) {
   )
 }
 
-function NavGroup({ section, items, accounting, accountingEnabled }) {
+function NavGroup({ section, items, accounting, accountingEnabled, payroll, payrollEnabled }) {
   const [open, setOpen] = useState(true)
   if (accounting && !accountingEnabled) return null
+  if (payroll    && !payrollEnabled)    return null
   return (
     <div className="mb-1">
       {section && (
@@ -133,12 +135,14 @@ export default function Sidebar() {
   const [currentTerm, setCurrentTerm] = useState(null)
   const [logoPath, setLogoPath]       = useState('')
   const [accounting, setAccounting]   = useState(false)
+  const [payrollOn,  setPayrollOn]    = useState(false)
 
   useEffect(() => {
     window.api?.getSettings().then(s => {
       if (s?.school_name) setSchool(s.school_name)
       if (s?.logo_path)   setLogoPath(s.logo_path)
       if (s?.accounting_enabled) setAccounting(!!s.accounting_enabled)
+      if (s?.payroll_enabled)    setPayrollOn(!!s.payroll_enabled)
     })
     window.api?.getCurrentTerm().then(t => setCurrentTerm(t))
   }, [])
@@ -184,6 +188,8 @@ export default function Sidebar() {
             items={group.items}
             accounting={group.accounting}
             accountingEnabled={accounting}
+            payroll={group.payroll}
+            payrollEnabled={payrollOn}
           />
         ))}
       </nav>
