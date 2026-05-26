@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import {
   Building2, UserPlus, Upload, CheckCircle2,
-  ArrowRight, ArrowLeft, GraduationCap
+  ArrowRight, ArrowLeft, GraduationCap, LogIn
 } from 'lucide-react'
 import { Field } from '../../components/ui'
 

@@ -54,9 +54,7 @@ export function AuthProvider({ children }) {
       await loadCurrency()
       const settings = await window.api.getSettings()
       setAccounting(!!settings?.accounting_enabled)
-      // Load payroll and inventory enabled flags
-      setPayrollEnabled?.(!!settings?.payroll_enabled)
-      setInventoryEnabled?.(!!settings?.inventory_enabled)
+      // payroll/inventory enabled flags are loaded directly in Sidebar from settings
     } catch (e) {
       console.error('Settings load failed:', e)
     } finally {
