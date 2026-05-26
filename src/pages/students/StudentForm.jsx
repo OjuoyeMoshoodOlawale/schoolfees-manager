@@ -39,7 +39,7 @@ export default function StudentForm() {
         const student = await window.api.getStudent(Number(id))
         if (!student) { toast.error('Student not found'); navigate('/students'); return }
         setPhotoPath(student.photo_path || '')
-        if (student.photo_path) setPhotoPreview(`file://${student.photo_path}`)
+        if (student.photo_path) setPhotoPreview(`localfile://${student.photo_path}`)
         // Load class from student_status for current term
         let classId = ''
         if (term) {
@@ -61,7 +61,7 @@ export default function StudentForm() {
     const path = await window.api.pickPhoto()
     if (path) {
       setPhotoPath(path)
-      setPhotoPreview(`file://${path}`)
+      setPhotoPreview(`localfile://${path}`)
     }
   }
 

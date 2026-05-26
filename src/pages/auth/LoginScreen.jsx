@@ -38,7 +38,7 @@ export default function LoginScreen({ schoolName, logoPath, onLogin }) {
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-2xl overflow-hidden">
             {logoPath ? (
-              <img src={`file://${logoPath}`} alt="Logo" className="w-full h-full object-cover"
+              <img src={`localfile://${logoPath}`} alt="Logo" className="w-full h-full object-cover"
                 onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }} />
             ) : null}
             <div className={`w-full h-full flex items-center justify-center ${logoPath ? 'hidden' : 'flex'}`}>

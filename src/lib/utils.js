@@ -119,7 +119,7 @@ export function buildBillSlipHtml({ student, bills, adjustments, bill_total, pre
   const f = n => currency + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const logoHtml = school?.logo_path
-    ? `<img src="file://${school.logo_path}" style="width:60px;height:60px;object-fit:contain;display:block;margin:0 auto 8px;" />`
+    ? `<img src="localfile://${school.logo_path}" style="width:60px;height:60px;object-fit:contain;display:block;margin:0 auto 8px;" />`
     : ''
 
   const billRows = bills.filter(b => b.status !== 'waived').map((b, i) => `

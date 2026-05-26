@@ -116,7 +116,7 @@ function ReceiptModal({ data, onClose, fmt, school }) {
           <div className="text-center pb-3 border-b-2 border-gray-800">
             {school?.logo_path && (
               <img
-                src={`file://${school.logo_path}`}
+                src={`localfile://${school.logo_path}`}
                 alt="Logo"
                 className="w-14 h-14 object-contain mx-auto mb-1"
                 onError={e => { e.target.style.display = 'none' }}

@@ -4,7 +4,7 @@ import {
   Users, TrendingUp, AlertTriangle, DollarSign,
   ArrowRight, Receipt, BarChart2, Zap,
   GraduationCap, Scale, BookOpen, FileText,
-  Activity, Briefcase, LayoutDashboard
+  Activity, Briefcase, LayoutDashboard, Shield
 } from 'lucide-react'
 import { Spinner } from '../components/ui'
 import { useAuth } from '../context/AuthContext'

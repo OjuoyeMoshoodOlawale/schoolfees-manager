@@ -51,7 +51,7 @@ function StudentDrawer({ student, onClose, onEdit, onStatusChange }) {
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-xl bg-blue-100 flex items-center justify-center overflow-hidden flex-shrink-0">
               {student.photo_path ? (
-                <img src={`file://${student.photo_path}`} alt="" className="w-full h-full object-cover" />
+                <img src={`localfile://${student.photo_path}`} alt="" className="w-full h-full object-cover" />
               ) : (
                 <span className="text-xl font-semibold text-blue-600">
                   {student.first_name?.[0]}{student.last_name?.[0]}
@@ -217,7 +217,7 @@ export default function StudentsPage() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden flex-shrink-0">
             {row.photo_path ? (
-              <img src={`file://${row.photo_path}`} alt="" className="w-full h-full object-cover" />
+              <img src={`localfile://${row.photo_path}`} alt="" className="w-full h-full object-cover" />
             ) : (
               <span className="text-xs font-semibold text-blue-600">
                 {row.first_name?.[0]}{row.last_name?.[0]}

@@ -67,7 +67,7 @@ export default function FeeStatementPage() {
         {/* School Header */}
         <div className="text-center border-b-2 border-gray-800 pb-4 mb-5">
           {school?.logo_path && (
-            <img src={`file://${school.logo_path}`} alt="Logo"
+            <img src={`localfile://${school.logo_path}`} alt="Logo"
               className="w-16 h-16 object-contain mx-auto mb-2"
               onError={e => { e.target.style.display = 'none' }} />
           )}

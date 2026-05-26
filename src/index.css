@@ -122,8 +122,8 @@
   #print-statement { padding: 15mm; }
 }
 
-/* ─── Image fix — always show file:// paths ───────────────────────────────── */
-img[src^="file://"] { display: block; }
+/* ─── Image fix — always show localfile:// paths ───────────────────────────────── */
+img[src^="localfile://"] { display: block; }
 
 /* ─── Currency input ──────────────────────────────────────────────────────── */
 .currency-input {

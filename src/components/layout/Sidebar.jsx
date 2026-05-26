@@ -142,7 +142,7 @@ export default function Sidebar() {
           <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0 overflow-hidden shadow-lg">
             {logoPath ? (
               <img
-                src={`file://${logoPath}`}
+                src={`localfile://${logoPath}`}
                 alt="School logo"
                 className="w-full h-full object-cover"
                 onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }}

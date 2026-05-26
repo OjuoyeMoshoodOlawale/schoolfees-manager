@@ -150,7 +150,7 @@ export default function SettingsPage() {
                 <div onClick={pickLogo}
                   className="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition overflow-hidden bg-gray-50 flex-shrink-0">
                   {logoPath ? (
-                    <img src={`file://${logoPath}`} alt="Logo" className="w-full h-full object-cover" />
+                    <img src={`localfile://${logoPath}`} alt="Logo" className="w-full h-full object-cover" />
                   ) : (
                     <div className="text-center"><Building2 size={24} className="text-gray-300 mx-auto" /><p className="text-xs text-gray-400 mt-1">No logo</p></div>
                   )}

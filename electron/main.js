@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron')
 const path = require('path')
 const fs   = require('fs')
 
@@ -11,6 +11,13 @@ const dbDir = isDev
 
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
 const dbPath = path.join(dbDir, 'schoolfees.db')
+
+// ─── Safe local-file protocol — replaces file:// so webSecurity stays ON ─────
+// Usage in renderer: <img src="localfile:///absolute/path/to/image.png">
+// Registered before app is ready (required by Electron).
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'localfile', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true } }
+])
 
 const { setDbPath } = require('./lib/database')
 const netConfig = require('./lib/network.config')
@@ -59,6 +66,22 @@ ipcMain.handle('app:set-content-protection', (_, enabled) => {
 
 // ─── Clean Print — renders pure HTML in a hidden window, no app chrome ─────────
 ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
+  // Convert any localfile:// image src to inline base64 so the data: URL context can render them
+  let processedHtml = html
+  const imgRegex = /src="localfile:\/\/([^"]+)"/g
+  let match
+  while ((match = imgRegex.exec(html)) !== null) {
+    const filePath = decodeURIComponent(match[1])
+    try {
+      if (fs.existsSync(filePath)) {
+        const ext  = path.extname(filePath).toLowerCase().replace('.', '') || 'png'
+        const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+        const b64  = fs.readFileSync(filePath).toString('base64')
+        processedHtml = processedHtml.replace(match[0], `src="data:${mime};base64,${b64}"`)
+      }
+    } catch { /* skip — image just won't show */ }
+  }
+
   return new Promise((resolve) => {
     const printWin = new BrowserWindow({
       width: 800, height: 600,
@@ -72,7 +95,7 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
         body { font-family: Arial, sans-serif; font-size: 12pt; background: white; }
         @page { margin: 1cm; }
       </style>
-    </head><body>${html}</body></html>`
+    </head><body>${processedHtml}</body></html>`
 
     printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
     printWin.webContents.once('did-finish-load', () => {
@@ -90,13 +113,20 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
 // ─── Window ───────────────────────────────────────────────────────────────────
 let win
 function createWindow() {
+  // Register safe local-file protocol: localfile:///path → serves file from disk
+  protocol.handle('localfile', (request) => {
+    // Strip the scheme — localfile:///C:/... → /C:/... or localfile:///home/... → /home/...
+    const filePath = decodeURIComponent(request.url.replace('localfile://', ''))
+    return net.fetch(`file://${filePath}`)
+  })
+
   win = new BrowserWindow({
     width: 1366, height: 820, minWidth: 1024, minHeight: 680,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,
+      // webSecurity stays ON (default true) — use localfile:// for local images
     },
     titleBarStyle: 'default',
     show: false,
