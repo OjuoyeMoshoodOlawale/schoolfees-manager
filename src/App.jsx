@@ -50,6 +50,10 @@ import InvoicesPage      from './pages/accounting/InvoicesPage'
 import LedgerPage        from './pages/accounting/LedgerPage'
 import TrialBalancePage  from './pages/accounting/TrialBalancePage'
 import AccountStatementPage from './pages/accounting/AccountStatementPage'
+import StaffPage             from './pages/payroll/StaffPage'
+import SalaryGradesPage      from './pages/payroll/SalaryGradesPage'
+import RunPayrollPage         from './pages/payroll/RunPayrollPage'
+import PayrollDeductionsPage  from './pages/payroll/PayrollDeductionsPage'
 
 // ─── Auth Gate ───────────────────────────────────────────────────────────────
 function AuthGate() {
@@ -149,6 +153,10 @@ function MainApp() {
           <Route path="/accounting/ledger"         element={<LedgerPage />} />
           <Route path="/accounting/trial-balance"  element={<TrialBalancePage />} />
           <Route path="/accounting/statement"      element={<AccountStatementPage />} />
+          <Route path="/payroll/staff"             element={<StaffPage />} />
+          <Route path="/payroll/grades"            element={<SalaryGradesPage />} />
+          <Route path="/payroll/run"               element={<RunPayrollPage />} />
+          <Route path="/payroll/deductions"        element={<PayrollDeductionsPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />

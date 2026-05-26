@@ -144,6 +144,27 @@ contextBridge.exposeInMainWorld('api', {
   updateInvoiceStatus:(d)    => ipcRenderer.invoke('invoices:update-status', d),
   deleteInvoice:      (id)   => ipcRenderer.invoke('invoices:delete', id),
 
+  // ── Payroll
+  payrollGradesList:      ()     => ipcRenderer.invoke('payroll:grades-list'),
+  payrollGradeSave:       (d)    => ipcRenderer.invoke('payroll:grade-save', d),
+  payrollGradeDelete:     (id)   => ipcRenderer.invoke('payroll:grade-delete', id),
+  payrollStaffList:       (d)    => ipcRenderer.invoke('payroll:staff-list', d),
+  payrollStaffGet:        (id)   => ipcRenderer.invoke('payroll:staff-get', id),
+  payrollStaffSave:       (d)    => ipcRenderer.invoke('payroll:staff-save', d),
+  payrollStaffToggle:     (id)   => ipcRenderer.invoke('payroll:staff-toggle-active', id),
+  payrollDeductionsList:  (d)    => ipcRenderer.invoke('payroll:deductions-list', d),
+  payrollDeductionSave:   (d)    => ipcRenderer.invoke('payroll:deduction-save', d),
+  payrollDeductionDelete: (id)   => ipcRenderer.invoke('payroll:deduction-delete', id),
+  payrollRunsList:        ()     => ipcRenderer.invoke('payroll:runs-list'),
+  payrollRunGet:          (id)   => ipcRenderer.invoke('payroll:run-get', id),
+  payrollRunPreview:      (d)    => ipcRenderer.invoke('payroll:run-preview', d),
+  payrollRunCreate:       (d)    => ipcRenderer.invoke('payroll:run-create', d),
+  payrollRunApprove:      (d)    => ipcRenderer.invoke('payroll:run-approve', d),
+  payrollRunMarkPaid:     (id)   => ipcRenderer.invoke('payroll:run-mark-paid', id),
+  payrollRunDelete:       (id)   => ipcRenderer.invoke('payroll:run-delete', id),
+  payrollPayslipHtml:     (d)    => ipcRenderer.invoke('payroll:payslip-html', d),
+  payrollSummaryHtml:     (id)   => ipcRenderer.invoke('payroll:summary-html', id),
+
   // ── Backup
   getDbPath:          ()     => ipcRenderer.invoke('backup:get-db-path'),
   backupLocal:        ()     => ipcRenderer.invoke('backup:local'),

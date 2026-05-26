@@ -284,25 +284,40 @@ Three modes, persisted in `localStorage`:
 - [ ] School logo on ALL print outputs
 - [ ] Email address in header of bill prints and statements
 
-### Phase 5 — Payroll Module
+### Phase 5 — Payroll Module ✅ COMPLETE (Session 3)
+
+**Decision log:**
+- PAYE: ✅ Implemented (FIRS 2024 bands with CRA)
+- Pension: ✅ Implemented (Employee 8% + Employer 10% of pensionable pay)
+- NHF / NSITF / Parent Portal / WhatsApp: ❌ Postponed
+- USD pricing: ❌ Currency taken from Settings only
+
+**Built:**
+- DB: `salary_grades`, `staff`, `payroll_runs`, `payroll_lines`, `payroll_deductions`
+- Backend: `electron/handlers/payroll.js` — 20 IPC handlers, PAYE engine, pension engine, payslip HTML, summary HTML
+- Preload: 20 new payroll methods
+- Pages: StaffPage, SalaryGradesPage, RunPayrollPage, PayrollDeductionsPage
+- Sidebar: Payroll section
+- Workflow: Preview → Create (draft) → Approve → Mark Paid + print payslips
+
+**PAYE (FIRS 2024):** CRA = max(₦200k, 1% gross) + 20% gross. Bands: 7/11/15/19/21/24%.
+**Pension (PenCom):** Employee 8%, Employer 10% of (basic+housing+transport). Employer NOT deducted from pay.
+
 ### Phase 6 — Expense & Procurement
 ### Phase 7 — Attendance
 ### Phase 8 — Inventory
-### Phase 9 — Parent Portal
 ### Phase 10 — Multi-Branch
 
 See `PRODUCT_ROADMAP.md` for full details, pricing, and agile breakdown.
 
 ---
 
-## 15. DECISIONS MADE (answered — do not re-ask)
+## 15. OPEN QUESTIONS (answer at start of next session)
 
-1. **Payroll — pension:** PAYE + Pension deductions only. NHF and NSITF postponed to v2. Keep payroll lightweight.
-2. **Parent Portal:** POSTPONED — not in roadmap.
-3. **Multi-user LAN sync:** YES — real-time sync between PCs on same school network.
-4. **Biometric attendance:** YES — sell hardware + provide software bridge.
-5. **WhatsApp:** POSTPONED — not in current roadmap.
-6. **USD pricing:** NO — currency set via Settings only. No separate USD pricing tier.
+1. **Multi-user LAN sync:** Real-time between PCs on same network, or just user switching on one PC?
+2. **Biometric attendance:** Do you plan to sell the hardware yourself?
+3. **Expense module:** Should it link to accounting journal automatically when an expense is posted?
+4. **Payroll — staff import:** Should there be an Excel import for staff bulk onboarding?
 
 ---
 

@@ -386,6 +386,101 @@ function initSchema() {
       details TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- ── PAYROLL MODULE ────────────────────────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS salary_grades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      basic_salary REAL NOT NULL DEFAULT 0,
+      housing_allowance REAL NOT NULL DEFAULT 0,
+      transport_allowance REAL NOT NULL DEFAULT 0,
+      other_allowances REAL NOT NULL DEFAULT 0,
+      description TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_number TEXT NOT NULL UNIQUE,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      other_names TEXT DEFAULT '',
+      gender TEXT NOT NULL DEFAULT 'M' CHECK (gender IN ('M','F')),
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      department TEXT DEFAULT '',
+      designation TEXT DEFAULT '',
+      date_of_birth TEXT DEFAULT '',
+      date_joined TEXT DEFAULT '',
+      bank_name TEXT DEFAULT '',
+      account_number TEXT DEFAULT '',
+      account_name TEXT DEFAULT '',
+      tax_id TEXT DEFAULT '',
+      pension_pin TEXT DEFAULT '',
+      salary_grade_id INTEGER REFERENCES salary_grades(id),
+      basic_salary REAL NOT NULL DEFAULT 0,
+      housing_allowance REAL NOT NULL DEFAULT 0,
+      transport_allowance REAL NOT NULL DEFAULT 0,
+      other_allowances REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS payroll_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_reference TEXT NOT NULL UNIQUE,
+      month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+      year INTEGER NOT NULL,
+      run_date TEXT NOT NULL DEFAULT (date('now')),
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved','paid')),
+      total_gross REAL NOT NULL DEFAULT 0,
+      total_paye REAL NOT NULL DEFAULT 0,
+      total_pension_employee REAL NOT NULL DEFAULT 0,
+      total_pension_employer REAL NOT NULL DEFAULT 0,
+      total_other_deductions REAL NOT NULL DEFAULT 0,
+      total_net REAL NOT NULL DEFAULT 0,
+      staff_count INTEGER NOT NULL DEFAULT 0,
+      notes TEXT DEFAULT '',
+      approved_by TEXT DEFAULT '',
+      approved_at TEXT,
+      created_by TEXT DEFAULT 'admin',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(month, year)
+    );
+
+    CREATE TABLE IF NOT EXISTS payroll_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+      staff_id INTEGER NOT NULL REFERENCES staff(id),
+      basic_salary REAL NOT NULL DEFAULT 0,
+      housing_allowance REAL NOT NULL DEFAULT 0,
+      transport_allowance REAL NOT NULL DEFAULT 0,
+      other_allowances REAL NOT NULL DEFAULT 0,
+      gross_salary REAL NOT NULL DEFAULT 0,
+      paye_tax REAL NOT NULL DEFAULT 0,
+      pension_employee REAL NOT NULL DEFAULT 0,
+      pension_employer REAL NOT NULL DEFAULT 0,
+      other_deductions REAL NOT NULL DEFAULT 0,
+      net_salary REAL NOT NULL DEFAULT 0,
+      payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending','paid')),
+      UNIQUE(run_id, staff_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payroll_deductions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      is_recurring INTEGER NOT NULL DEFAULT 1,
+      month INTEGER,
+      year INTEGER,
+      notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
   `)
 }
 

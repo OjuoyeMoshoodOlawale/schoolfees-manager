@@ -6,7 +6,8 @@ import {
   Copy, Eye, Zap, Receipt, AlertTriangle, BarChart2, History,
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
-  TrendingUp, Activity, Hash, MessageCircle
+  TrendingUp, Activity, Hash, MessageCircle,
+  Briefcase, UserCog, Play, Minus
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -68,6 +69,15 @@ const NAV_GROUPS = [
       { to: '/accounting/ledger',    icon: BookMarked, label: 'Ledger' },
       { to: '/accounting/trial-balance',  icon: Scale,        label: 'Trial Balance' },
       { to: '/accounting/statement',    icon: FileText,     label: 'Account Statement' },
+    ]
+  },
+  {
+    section: 'Payroll',
+    items: [
+      { to: '/payroll/run',        icon: Play,      label: 'Run Payroll' },
+      { to: '/payroll/staff',      icon: Briefcase, label: 'Staff' },
+      { to: '/payroll/grades',     icon: UserCog,   label: 'Salary Grades' },
+      { to: '/payroll/deductions', icon: Minus,     label: 'Extra Deductions' },
     ]
   },
   {
