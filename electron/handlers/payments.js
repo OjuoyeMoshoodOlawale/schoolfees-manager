@@ -778,12 +778,34 @@ ipcMain.handle('reports:term-end', (_, { term_id } = {}) => {
     GROUP BY payment_method ORDER BY total DESC
   `).all([tid])
 
+  // Method × Class cross-tab: how much of each payment method came from each class
+  const methodByClass = db.prepare(`
+    SELECT p.payment_method, ss.class_id, c.name as class_name,
+           COUNT(*) as n, COALESCE(SUM(p.amount_paid),0) as total
+    FROM payments p
+    JOIN student_status ss ON ss.student_id=p.student_id AND ss.term_id=p.term_id
+    JOIN classes c ON c.id=ss.class_id
+    WHERE p.term_id=? AND p.is_reversed=0 AND p.amount_paid>0
+    GROUP BY p.payment_method, ss.class_id
+    ORDER BY p.payment_method, c.level
+  `).all([tid])
+
   const totalBilled   = classSummaries.reduce((s,c) => s + c.billed, 0)
   const totalPaid     = classSummaries.reduce((s,c) => s + c.paid, 0)
   const totalStudents = classSummaries.reduce((s,c) => s + c.enrolled, 0)
   const totalDefaulters = classSummaries.reduce((s,c) => s + c.defaulters, 0)
 
-  return { term, classSummaries, methodBreakdown, totalBilled, totalPaid, totalStudents, totalDefaulters,
+  // Reconciliation: class-total-paid must equal method-total — mismatch = data problem
+  const methodTotal   = methodBreakdown.reduce((s,m) => s + Number(m.total), 0)
+  const reconciliation = {
+    classTotalPaid: totalPaid,
+    methodTotalPaid: methodTotal,
+    diff: Math.abs(totalPaid - methodTotal),
+    ok: Math.abs(totalPaid - methodTotal) < 0.01   // float tolerance
+  }
+
+  return { term, classSummaries, methodBreakdown, methodByClass, reconciliation,
+    totalBilled, totalPaid, totalStudents, totalDefaulters,
     balance: totalBilled - totalPaid, collectionPct: totalBilled > 0 ? Math.round((totalPaid/totalBilled)*100) : 0 }
 })
 
