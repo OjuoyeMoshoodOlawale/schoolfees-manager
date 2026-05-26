@@ -6,9 +6,11 @@ const defaults  = require('../lib/defaults')
 
 module.exports = function registerSettingsHandlers(dbDir) {
 
-  ipcMain.handle('settings:get', () =>
-    getDb().prepare('SELECT * FROM school_settings WHERE id=1').get()
-  )
+  ipcMain.handle('settings:get', () => {
+    const s = getDb().prepare('SELECT * FROM school_settings WHERE id=1').get()
+    if (s?.logo_path) s.logo_path = s.logo_path.replace(/\\/g, '/')
+    return s
+  })
 
   ipcMain.handle('settings:save', (_, data) => {
     const db = getDb()
@@ -46,7 +48,8 @@ module.exports = function registerSettingsHandlers(dbDir) {
     const ext  = path.extname(src)
     const dest = path.join(dbDir, `logo${ext}`)
     fs.copyFileSync(src, dest)
-    return dest
+    // Always return forward slashes — backslashes break localfile:// URLs on Windows
+    return dest.replace(/\\/g, '/')
   })
 
   ipcMain.handle('settings:currencies', () => defaults.currencies)

@@ -279,7 +279,8 @@ ipcMain.handle('students:pick-photo', async () => {
   const dest = path.join(dbDir, 'photos', name)
   if (!fs.existsSync(path.join(dbDir, 'photos'))) fs.mkdirSync(path.join(dbDir, 'photos'))
   fs.copyFileSync(src, dest)
-  return dest
+  // Always return forward slashes — backslashes break localfile:// URLs on Windows
+  return dest.replace(/\\/g, '/')
 })
 
 // Student Status

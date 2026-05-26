@@ -74,7 +74,11 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
   const imgRegex = /src="localfile:\/\/([^"]+)"/g
   let match
   while ((match = imgRegex.exec(html)) !== null) {
-    const filePath = decodeURIComponent(match[1])
+    let filePath = decodeURIComponent(match[1])
+    // Remove leading slash before Windows drive letter: /C:/path → C:/path
+    if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
+    // Normalise backslashes (Windows)
+    filePath = filePath.replace(/\//g, path.sep)
     try {
       if (fs.existsSync(filePath)) {
         const ext  = path.extname(filePath).toLowerCase().replace('.', '') || 'png'
@@ -118,9 +122,13 @@ let win
 function createWindow() {
   // Register safe local-file protocol: localfile:///path → serves file from disk
   protocol.handle('localfile', (request) => {
-    // Strip the scheme — localfile:///C:/... → /C:/... or localfile:///home/... → /home/...
-    const filePath = decodeURIComponent(request.url.replace('localfile://', ''))
-    return net.fetch(`file://${filePath}`)
+    // Strip scheme: localfile://C:/path or localfile:///C:/path → C:/path
+    let filePath = decodeURIComponent(request.url.replace('localfile://', ''))
+    // Remove leading slash that appears on some platforms: /C:/path → C:/path
+    if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
+    // Normalise backslashes to forward slashes (Windows)
+    filePath = filePath.replace(/\\/g, '/')
+    return net.fetch(`file:///${filePath}`)
   })
 
   win = new BrowserWindow({
