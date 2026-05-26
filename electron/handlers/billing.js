@@ -1,36 +1,31 @@
 const { ipcMain } = require('electron')
 const { getDb } = require('../lib/database')
 
-// ── Core billing engine — the single source of truth for bill state ───────────
+// ── Core billing engine ───────────────────────────────────────────────────────
 //
-// Rules this enforces on every call:
-//  1. Student is inactive → freeze all their pending bills (mark frozen, don't delete)
-//  2. For active students: remove pending lines whose config no longer applies
-//     (gender/boarding/entry_type rule changed, fee deactivated, class changed)
-//  3. Add new applicable lines that don't exist yet
-//  4. Sync amount + is_compulsory on existing PENDING lines to match current config
-//     (catches fee amount changes mid-term)
-//  5. Never touch WAIVED lines — those are intentional overrides
+// Bills are point-in-time records generated once before term starts.
+// This engine handles WHICH lines exist, not what amount they show.
+// Amounts on existing bills are NEVER modified here — use adjustments for corrections.
 //
-// Safe to call with payments present — only pending lines are touched.
-// Call inside BEGIN/COMMIT from the caller.
+// Triggers: new student, term start, status change, profile/class change
+// Does NOT trigger on: fee config amount edits (those only affect new generations)
+//
 function autoRecalcStudentBills(db, student_id, term_id) {
   const status = db.prepare('SELECT * FROM student_status WHERE student_id=? AND term_id=?').get([student_id, term_id])
-  if (!status) return { generated: 0, removed: 0, updated: 0, frozen: 0 }
+  if (!status) return { generated: 0, removed: 0, frozen: 0 }
 
   const student = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
-  if (!student) return { generated: 0, removed: 0, updated: 0, frozen: 0 }
+  if (!student) return { generated: 0, removed: 0, frozen: 0 }
 
-  // Rule 1: Student inactive → freeze all their pending bills in this term
+  // Inactive student: freeze pending bills (excluded from balance, shown as ❄)
   if (status.status !== 'active') {
     const frozen = db.prepare(
       "UPDATE student_bills SET status='frozen' WHERE student_id=? AND term_id=? AND status='pending'"
     ).run([student_id, term_id]).changes
-    return { generated: 0, removed: 0, updated: 0, frozen }
+    return { generated: 0, removed: 0, frozen }
   }
 
-  // Student is active — re-unfreeze any previously frozen bills before re-evaluating
-  // (in case student was reactivated)
+  // Reactivated: restore frozen bills to pending before re-evaluating
   db.prepare(
     "UPDATE student_bills SET status='pending' WHERE student_id=? AND term_id=? AND status='frozen'"
   ).run([student_id, term_id])
@@ -38,54 +33,44 @@ function autoRecalcStudentBills(db, student_id, term_id) {
   const configs = db.prepare('SELECT * FROM bill_config WHERE class_id=? AND term_id=? AND is_active=1').all([status.class_id, term_id])
   const gMap    = { M: 'male', F: 'female' }
 
-  // Which configs apply to this student right now?
   const applicable = configs.filter(c => {
     const gOk = c.gender_rule       === 'all' || c.gender_rule       === gMap[student.gender]
     const tOk = c.student_type_rule === 'all' || c.student_type_rule === student.entry_type
     const bOk = c.boarding_rule     === 'all' || c.boarding_rule     === (student.boarding_type || 'day')
     return gOk && tOk && bOk
   })
-  const applicableMap = new Map(applicable.map(c => [c.id, c]))  // config_id → config
+  const applicableIds = new Set(applicable.map(c => c.id))
 
-  // Existing PENDING bill lines
   const existing = db.prepare(
     "SELECT * FROM student_bills WHERE student_id=? AND term_id=? AND status='pending'"
   ).all([student_id, term_id])
 
-  let removed = 0, generated = 0, updated = 0
+  let removed = 0, generated = 0
 
-  // Rule 2: Remove pending lines whose config no longer applies
+  // Remove pending lines whose config no longer applies to this student's profile
   for (const bill of existing) {
-    if (!applicableMap.has(bill.bill_config_id)) {
+    if (!applicableIds.has(bill.bill_config_id)) {
       db.prepare('DELETE FROM student_bills WHERE id=?').run([bill.id])
       removed++
     }
   }
 
-  const existingByConfigId = new Map(existing.map(b => [b.bill_config_id, b]))
+  const existingConfigIds = new Set(existing.map(b => b.bill_config_id))
 
+  // Add new applicable lines that don't exist yet — amount taken from config at this moment
   for (const config of applicable) {
-    const existingBill = existingByConfigId.get(config.id)
-    if (!existingBill) {
-      // Rule 3: Insert new applicable lines
+    if (!existingConfigIds.has(config.id)) {
       db.prepare(
         "INSERT OR IGNORE INTO student_bills (student_id,term_id,bill_config_id,amount,is_compulsory,status) VALUES (?,?,?,?,?,'pending')"
       ).run([student_id, term_id, config.id, config.amount, config.is_compulsory])
       generated++
-    } else if (
-      Number(existingBill.amount) !== Number(config.amount) ||
-      existingBill.is_compulsory !== config.is_compulsory
-    ) {
-      // Rule 4: Sync amount/compulsory if config changed — only on pending bills
-      db.prepare(
-        "UPDATE student_bills SET amount=?, is_compulsory=? WHERE id=?"
-      ).run([config.amount, config.is_compulsory, existingBill.id])
-      updated++
     }
+    // Existing bill amounts intentionally NOT updated — they are historical records
   }
 
-  return { generated, removed, updated, frozen: 0 }
+  return { generated, removed, frozen: 0 }
 }
+
 
 module.exports = function register_billingHandlers() {
 

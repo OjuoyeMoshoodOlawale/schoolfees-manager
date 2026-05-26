@@ -25,21 +25,38 @@ module.exports = function register_feesHandlers() {
 // ─── Phase 2: Fee Items & Bill Config ──────────────────────────────────────
 
 ipcMain.handle('fee-items:list', () =>
-  getDb().prepare('SELECT * FROM fee_items ORDER BY name').all()
+  getDb().prepare(`
+    SELECT fi.*,
+      CASE WHEN EXISTS (SELECT 1 FROM bill_config WHERE fee_item_id=fi.id) THEN 1 ELSE 0 END as in_use
+    FROM fee_items fi ORDER BY fi.name
+  `).all()
 )
 ipcMain.handle('fee-items:create', (_, { name, description = '' }) => {
   const info = getDb().prepare('INSERT INTO fee_items (name, description) VALUES (?,?)').run([name.trim(), description])
   return { id: info.lastInsertRowid }
 })
 ipcMain.handle('fee-items:update', (_, { id, name, description = '', is_active }) => {
-  getDb().prepare('UPDATE fee_items SET name=?, description=?, is_active=? WHERE id=?')
+  const db = getDb()
+  // If this item is used in any bill config, its name is locked (it appears on historical statements)
+  const inUse = db.prepare('SELECT id FROM bill_config WHERE fee_item_id=? LIMIT 1').get(id)
+  if (inUse) {
+    // Only allow description and active/inactive toggle — not name rename
+    db.prepare('UPDATE fee_items SET description=?, is_active=? WHERE id=?').run([description, is_active, id])
+    return { ok: true, nameLocked: true }
+  }
+  db.prepare('UPDATE fee_items SET name=?, description=?, is_active=? WHERE id=?')
     .run([name.trim(), description, is_active, id])
-  return { ok: true }
+  return { ok: true, nameLocked: false }
 })
 ipcMain.handle('fee-items:delete', (_, id) => {
-  const used = getDb().prepare('SELECT id FROM bill_config WHERE fee_item_id=? LIMIT 1').get(id)
-  if (used) throw new Error('Fee item is used in a bill configuration and cannot be deleted.')
-  getDb().prepare('DELETE FROM fee_items WHERE id=?').run(id)
+  const db = getDb()
+  const inConfig = db.prepare('SELECT id FROM bill_config WHERE fee_item_id=? LIMIT 1').get(id)
+  if (inConfig) throw new Error('This fee item is used in a bill configuration and cannot be deleted. Deactivate it instead.')
+  const inBills = db.prepare(
+    'SELECT sb.id FROM student_bills sb JOIN bill_config bc ON bc.id=sb.bill_config_id WHERE bc.fee_item_id=? LIMIT 1'
+  ).get(id)
+  if (inBills) throw new Error('Student bills have been generated using this fee item. It cannot be deleted — deactivate it instead.')
+  db.prepare('DELETE FROM fee_items WHERE id=?').run(id)
   return { ok: true }
 })
 ipcMain.handle('fee-items:seed', () => {
@@ -84,30 +101,70 @@ ipcMain.handle('bill-config:upsert', (_, data) => {
     gender_rule = 'all', student_type_rule = 'all',
     boarding_rule = 'all', is_compulsory = 1, is_active = 1
   } = data
+
+  // Determine which term this config belongs to
+  const targetTermId = id
+    ? db.prepare('SELECT term_id FROM bill_config WHERE id=?').get(id)?.term_id
+    : term_id
+
+  // Lock: bill config for a current or past term cannot be edited
+  // (bills are already generated — use adjustments for corrections)
+  const targetTerm = db.prepare('SELECT * FROM terms WHERE id=?').get(targetTermId)
+  const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
+  const isCurrentOrPast = targetTerm && currentTerm && (
+    targetTerm.id === currentTerm.id ||
+    targetTerm.id < currentTerm.id
+  )
+  if (isCurrentOrPast && id) {
+    // Editing existing config in a current/past term — blocked
+    throw new Error(
+      'Fee configuration for a current or past term cannot be edited. ' +
+      'Bills have already been generated. Use adjustments on individual student bills instead.'
+    )
+  }
+
   if (id) {
-    // Get class_id/term_id from existing record if not provided
+    // Future term config update — allowed freely
     const existing = db.prepare('SELECT class_id, term_id FROM bill_config WHERE id=?').get(id)
     db.prepare(`UPDATE bill_config SET amount=?, gender_rule=?, student_type_rule=?,
       boarding_rule=?, is_compulsory=?, is_active=? WHERE id=?`)
       .run([amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active, id])
-    // Recalculate all students in this class — amount or rules changed
+    // Recalculate future term students (adds/removes lines only, no amount sync)
     recalcWholeClass(db, existing?.class_id || class_id, existing?.term_id || term_id)
     return { id }
   } else {
+    // New config — only allow for current term if no bills exist yet, or future terms
+    const hasBills = isCurrentOrPast
+      ? db.prepare('SELECT COUNT(*) as n FROM student_bills WHERE term_id=?').get(targetTermId)?.n > 0
+      : false
+    if (hasBills) {
+      throw new Error(
+        'Bills have already been generated for this term. ' +
+        'Adding new fee items after bills are generated is not allowed. ' +
+        'Use adjustments on individual students for one-off additions.'
+      )
+    }
     const info = db.prepare(`INSERT INTO bill_config
       (term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active)
       VALUES (?,?,?,?,?,?,?,?,?)`)
       .run([term_id, class_id, fee_item_id, amount, gender_rule, student_type_rule, boarding_rule, is_compulsory, is_active])
-    // New config line — add bills for eligible students immediately
+    // Generate bills for eligible students in this class/term
     recalcWholeClass(db, class_id, term_id)
     return { id: info.lastInsertRowid }
   }
 })
 
+
 ipcMain.handle('bill-config:delete', (_, id) => {
-  const used = getDb().prepare('SELECT id FROM student_bills WHERE bill_config_id=? LIMIT 1').get(id)
-  if (used) throw new Error('Bills have already been generated from this config.')
-  getDb().prepare('DELETE FROM bill_config WHERE id=?').run(id)
+  const db = getDb()
+  const config = db.prepare('SELECT * FROM bill_config WHERE id=?').get(id)
+  if (!config) throw new Error('Config not found')
+  // Lock: if term is current or past, cannot delete config
+  const currentTerm = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
+  if (currentTerm && config.term_id <= currentTerm.id) {
+    throw new Error('Fee configuration for a current or past term cannot be deleted. Deactivate it instead.')
+  }
+  db.prepare('DELETE FROM bill_config WHERE id=?').run(id)
   return { ok: true }
 })
 

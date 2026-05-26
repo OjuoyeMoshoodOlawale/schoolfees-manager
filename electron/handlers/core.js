@@ -189,7 +189,13 @@ ipcMain.handle('students:update', (_, { id, class_id, parent_email='', ...data }
   return { ok: true }
 })
 ipcMain.handle('students:delete', (_, id) => {
-  getDb().prepare('DELETE FROM students WHERE id=?').run(id)
+  const db = getDb()
+  // Block delete if student has any financial records
+  const hasPayments = db.prepare('SELECT id FROM payments WHERE student_id=? LIMIT 1').get(id)
+  if (hasPayments) throw new Error('This student has payment records and cannot be deleted. Mark them as inactive instead.')
+  const hasBills = db.prepare('SELECT id FROM student_bills WHERE student_id=? LIMIT 1').get(id)
+  if (hasBills) throw new Error('This student has bill records and cannot be deleted. Mark them as inactive instead.')
+  db.prepare('DELETE FROM students WHERE id=?').run(id)
   return { ok: true }
 })
 ipcMain.handle('students:next-reg', () => {

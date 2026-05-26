@@ -118,6 +118,7 @@ export default function BillConfigPage() {
   const [sessions, setSessions]       = useState([])
   const [classes, setClasses]         = useState([])
   const [feeItems, setFeeItems]       = useState([])
+  const [currentTermId, setCurrentTermId] = useState(null)
   const [terms, setTerms]             = useState([])
   const [configs, setConfigs]         = useState([])
   const [loading, setLoading]         = useState(false)
@@ -143,6 +144,7 @@ export default function BillConfigPage() {
       setFeeItems(fi)
       // Auto-select current session/term
       if (currentTerm) {
+        setCurrentTermId(currentTerm.id)
         setSelSession(String(currentTerm.session_id))
         const termList = await window.api.listTerms(currentTerm.session_id)
         setTerms(termList)
@@ -238,11 +240,15 @@ export default function BillConfigPage() {
       render: (_, row) => (
         <div className="flex gap-1 justify-end">
           <button className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
-            onClick={e => { e.stopPropagation(); setEditing(row); setShowModal(true) }}>
+            onClick={e => { e.stopPropagation(); setEditing(row); setShowModal(true) }}
+            disabled={isTermLocked}
+            title={isTermLocked ? 'Locked — current/past term config cannot be edited' : 'Edit'}>
             <Pencil size={12} />
           </button>
           <button className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
-            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}>
+            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
+            disabled={isTermLocked}
+            title={isTermLocked ? 'Locked — current/past term config cannot be deleted' : 'Delete'}>
             <Trash2 size={12} />
           </button>
         </div>
@@ -250,7 +256,8 @@ export default function BillConfigPage() {
     }
   ]
 
-  const canAdd = selTerm && selClass
+  const isTermLocked = currentTermId !== null && Number(selTerm) <= currentTermId
+  const canAdd = selTerm && selClass && !isTermLocked
 
   return (
     <div>
@@ -295,17 +302,28 @@ export default function BillConfigPage() {
         </div>
       </div>
 
+      {/* Lock banner for current/past terms */}
+      {selTerm && selClass && isTermLocked && (
+        <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 flex items-center gap-3">
+          <span className="text-amber-500 text-lg">🔒</span>
+          <div>
+            <p className="font-semibold text-amber-800 text-sm">This term's configuration is locked.</p>
+            <p className="text-amber-700 text-xs mt-0.5">Bills have already been generated. Fee config for current and past terms cannot be edited. To correct a student's bill, use adjustments on their individual bill page.</p>
+          </div>
+        </div>
+      )}
+
       {/* No selection prompt */}
-      {!canAdd && (
+      {!selTerm || !selClass ? (
         <div className="card text-center py-12">
           <SlidersHorizontal size={36} className="text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 font-medium">Select a session, term and class above</p>
           <p className="text-gray-400 text-sm mt-1">to view and configure billing for that combination</p>
         </div>
-      )}
+      ) : null}
 
       {/* Config table */}
-      {canAdd && (
+      {selTerm && selClass && (
         <div className="card overflow-hidden p-0">
           {/* Table header summary */}
           <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
@@ -338,7 +356,7 @@ export default function BillConfigPage() {
       )}
 
       {/* Info box */}
-      {canAdd && (
+      {selTerm && selClass && !isTermLocked && (
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex gap-2.5 text-sm text-blue-800">
           <AlertCircle size={15} className="flex-shrink-0 mt-0.5 text-blue-500" />
           <span>

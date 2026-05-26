@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Plus, Pencil, Trash2, ListChecks, Zap } from 'lucide-react'
+import { Plus, Pencil, Trash2, ListChecks, Zap, Lock } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, DataTable } from '../../components/ui'
 
 export default function FeeItemsPage() {
@@ -37,8 +37,8 @@ export default function FeeItemsPage() {
   const onSubmit = async (data) => {
     try {
       if (editing) {
-        await window.api.updateFeeItem({ id: editing.id, ...data, is_active: data.is_active ? 1 : 0 })
-        toast.success(`"${data.name}" updated`)
+        const r = await window.api.updateFeeItem({ id: editing.id, ...data, is_active: data.is_active ? 1 : 0 })
+        toast.success(r?.nameLocked ? 'Updated (name is locked — item is in use)' : `"${data.name}" updated`)
       } else {
         await window.api.createFeeItem({ name: data.name, description: data.description })
         toast.success(`"${data.name}" created`)
@@ -46,7 +46,7 @@ export default function FeeItemsPage() {
       setShowModal(false)
       load()
     } catch (e) {
-      toast.error(e.message?.includes('UNIQUE') ? 'A fee item with that name already exists' : 'Failed to save')
+      toast.error(e.message?.includes('UNIQUE') ? 'A fee item with that name already exists' : (e.message || 'Failed to save'))
     }
   }
 
@@ -89,15 +89,23 @@ export default function FeeItemsPage() {
         : <span className="badge-gray badge">Inactive</span>
     },
     {
-      key: 'actions', label: '', width: '90px', sortable: false,
+      key: 'actions', label: '', width: '110px', sortable: false,
       render: (_, row) => (
-        <div className="flex gap-1 justify-end">
+        <div className="flex gap-1 justify-end items-center">
+          {row.in_use ? (
+            <span title="Name locked — item is used in bill configs" className="text-gray-400 px-1">
+              <Lock size={12} />
+            </span>
+          ) : null}
           <button className="btn btn-sm text-blue-600 hover:bg-blue-50 border border-blue-200"
             onClick={e => { e.stopPropagation(); openEdit(row) }}>
             <Pencil size={12} />
           </button>
           <button className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
-            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}>
+            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
+            disabled={!!row.in_use}
+            title={row.in_use ? 'Cannot delete — in use. Deactivate instead.' : 'Delete'}
+          >
             <Trash2 size={12} />
           </button>
         </div>
@@ -162,8 +170,9 @@ export default function FeeItemsPage() {
       >
         <div className="space-y-4">
           <Field label="Fee Item Name" required error={errors.name?.message}
-            hint="e.g. Tuition Fee, Sportswear, Medical Levy, PTA Levy">
-            <input className="form-input" placeholder="Tuition Fee"
+            hint={editing?.in_use ? '🔒 Name locked — this item is used in bill configurations' : 'e.g. Tuition Fee, Sportswear, Medical Levy, PTA Levy'}>
+            <input className={`form-input ${editing?.in_use ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+              placeholder="Tuition Fee" readOnly={!!editing?.in_use}
               {...register('name', { required: 'Name is required' })} />
           </Field>
           <Field label="Description" hint="Optional — appears on fee statements">
