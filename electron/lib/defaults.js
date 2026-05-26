@@ -51,6 +51,20 @@ module.exports = {
     { code: '3001', name: 'Retained Earnings',    type: 'equity',   group: 'Equity' },
   ],
 
+  // Default expense categories (seeded on first run)
+  expenseCategories: [
+    { name: 'Salaries & Wages',      account_code: '5001' },
+    { name: 'Utilities',             account_code: '5002' },
+    { name: 'Maintenance & Repairs', account_code: '5003' },
+    { name: 'Stationery & Supplies', account_code: '5004' },
+    { name: 'Transportation',        account_code: '5005' },
+    { name: 'Petty Cash',            account_code: '5006' },
+    { name: 'Miscellaneous',         account_code: '5006' },
+    { name: 'Catering & Food',       account_code: '5006' },
+    { name: 'Security Services',     account_code: '5006' },
+    { name: 'Cleaning & Sanitation', account_code: '5006' },
+  ],
+
   // Default app settings
   settings: {
     currency_symbol:    '₦',

@@ -54,6 +54,10 @@ import StaffPage             from './pages/payroll/StaffPage'
 import SalaryGradesPage      from './pages/payroll/SalaryGradesPage'
 import RunPayrollPage         from './pages/payroll/RunPayrollPage'
 import PayrollDeductionsPage  from './pages/payroll/PayrollDeductionsPage'
+import ExpensesPage            from './pages/expenses/ExpensesPage'
+import ExpenseCategoriesPage   from './pages/expenses/ExpenseCategoriesPage'
+import SuppliersPage           from './pages/expenses/SuppliersPage'
+import ExpenseReportPage       from './pages/expenses/ExpenseReportPage'
 
 // ─── Auth Gate ───────────────────────────────────────────────────────────────
 function AuthGate() {
@@ -157,6 +161,10 @@ function MainApp() {
           <Route path="/payroll/grades"            element={<SalaryGradesPage />} />
           <Route path="/payroll/run"               element={<RunPayrollPage />} />
           <Route path="/payroll/deductions"        element={<PayrollDeductionsPage />} />
+          <Route path="/expenses"                  element={<ExpensesPage />} />
+          <Route path="/expenses/categories"       element={<ExpenseCategoriesPage />} />
+          <Route path="/expenses/suppliers"        element={<SuppliersPage />} />
+          <Route path="/expenses/report"           element={<ExpenseReportPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />

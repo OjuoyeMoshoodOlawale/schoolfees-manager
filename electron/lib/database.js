@@ -481,6 +481,52 @@ function initSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+
+    -- ── EXPENSE & PROCUREMENT MODULE ─────────────────────────────────────────
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      contact_person TEXT DEFAULT '',
+      phone TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      bank_name TEXT DEFAULT '',
+      account_number TEXT DEFAULT '',
+      account_name TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      account_id INTEGER REFERENCES accounts(id),
+      description TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      expense_number TEXT NOT NULL UNIQUE,
+      category_id INTEGER NOT NULL REFERENCES expense_categories(id),
+      supplier_id INTEGER REFERENCES suppliers(id),
+      description TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      expense_date TEXT NOT NULL DEFAULT (date('now')),
+      paid_from TEXT NOT NULL DEFAULT 'cash' CHECK (paid_from IN ('cash','bank','petty_cash','payable')),
+      payment_reference TEXT DEFAULT '',
+      receipt_path TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved','paid','rejected')),
+      notes TEXT DEFAULT '',
+      created_by TEXT DEFAULT 'admin',
+      approved_by TEXT DEFAULT '',
+      approved_at TEXT,
+      paid_at TEXT,
+      journal_entry_id INTEGER REFERENCES journal_entries(id),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 }
 
@@ -549,6 +595,13 @@ function seedDefaults() {
   for (const c of defaults.classes)   insertClass.run([c.name, c.level])
   for (const f of defaults.feeItems)  insertFee.run([f.name, f.description])
   for (const a of defaults.accounts)  insertAccount.run([a.code, a.name, a.type, a.group])
+
+  // Seed default expense categories (linked to account by code)
+  const insertCat = db.prepare('INSERT OR IGNORE INTO expense_categories (name, account_id) VALUES (?,?)')
+  for (const c of defaults.expenseCategories) {
+    const acct = db.prepare('SELECT id FROM accounts WHERE code=?').get([c.account_code])
+    insertCat.run([c.name, acct?.id || null])
+  }
 }
 
 module.exports = { getDb, closeDb, reopenDb, setDbPath, getDbPath }

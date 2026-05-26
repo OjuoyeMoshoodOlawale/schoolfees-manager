@@ -144,6 +144,22 @@ contextBridge.exposeInMainWorld('api', {
   updateInvoiceStatus:(d)    => ipcRenderer.invoke('invoices:update-status', d),
   deleteInvoice:      (id)   => ipcRenderer.invoke('invoices:delete', id),
 
+  // ── Expenses
+  expenseSuppliersList:   (d)    => ipcRenderer.invoke('expenses:suppliers-list', d),
+  expenseSupplierSave:    (d)    => ipcRenderer.invoke('expenses:supplier-save', d),
+  expenseSupplierDelete:  (id)   => ipcRenderer.invoke('expenses:supplier-delete', id),
+  expenseCategoriesList:  ()     => ipcRenderer.invoke('expenses:categories-list'),
+  expenseCategorySave:    (d)    => ipcRenderer.invoke('expenses:category-save', d),
+  expenseCategoryDelete:  (id)   => ipcRenderer.invoke('expenses:category-delete', id),
+  expensesList:           (d)    => ipcRenderer.invoke('expenses:list', d),
+  expenseGet:             (id)   => ipcRenderer.invoke('expenses:get', id),
+  expenseSave:            (d)    => ipcRenderer.invoke('expenses:save', d),
+  expenseApprove:         (d)    => ipcRenderer.invoke('expenses:approve', d),
+  expenseReject:          (d)    => ipcRenderer.invoke('expenses:reject', d),
+  expenseMarkPaid:        (d)    => ipcRenderer.invoke('expenses:mark-paid', d),
+  expenseDelete:          (id)   => ipcRenderer.invoke('expenses:delete', id),
+  expensesReport:         (d)    => ipcRenderer.invoke('expenses:report', d),
+
   // ── Payroll
   payrollGradesList:      ()     => ipcRenderer.invoke('payroll:grades-list'),
   payrollGradeSave:       (d)    => ipcRenderer.invoke('payroll:grade-save', d),

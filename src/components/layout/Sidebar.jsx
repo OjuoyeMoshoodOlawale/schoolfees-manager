@@ -7,7 +7,8 @@ import {
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
-  Briefcase, UserCog, Play, Minus
+  Briefcase, UserCog, Play, Minus,
+  ShoppingBag, Tag, Truck, PieChart
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -78,6 +79,15 @@ const NAV_GROUPS = [
       { to: '/payroll/staff',      icon: Briefcase, label: 'Staff' },
       { to: '/payroll/grades',     icon: UserCog,   label: 'Salary Grades' },
       { to: '/payroll/deductions', icon: Minus,     label: 'Extra Deductions' },
+    ]
+  },
+  {
+    section: 'Expenses',
+    items: [
+      { to: '/expenses',             icon: ShoppingBag, label: 'All Expenses' },
+      { to: '/expenses/report',      icon: PieChart,    label: 'Expense Report' },
+      { to: '/expenses/categories',  icon: Tag,         label: 'Categories' },
+      { to: '/expenses/suppliers',   icon: Truck,       label: 'Suppliers' },
     ]
   },
   {
