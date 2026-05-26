@@ -77,6 +77,7 @@ require('./handlers/accounting')()
 require('./handlers/payroll')
 require('./handlers/expenses')
 require('./handlers/inventory')
+require('./handlers/errorHandler')  // must be last — provides safeHandle wrapper
 
 // ── Start auto-backup scheduler ───────────────────────────────────────────────
 const { startScheduler } = require('./lib/scheduler')

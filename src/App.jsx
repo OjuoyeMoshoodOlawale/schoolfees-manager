@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext'
 import Layout from './components/layout/Layout'
 import { Spinner } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
+import SystemErrorsPage from './pages/settings/SystemErrorsPage'
 
 // Auth screens
 import ActivationScreen from './pages/auth/ActivationScreen'
@@ -181,6 +182,7 @@ function MainApp() {
           <Route path="/expenses/report"           element={<ExpenseReportPage />} />
           <Route path="/inventory"                 element={<InventoryPage />} />
           <Route path="/inventory/report"           element={<InventoryReportPage />} />
+          <Route path="/system-errors"               element={<SystemErrorsPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />

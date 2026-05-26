@@ -1,4 +1,5 @@
 const { ipcMain } = require('electron')
+const { safeHandle, logError } = require('./errorHandler')
 const { getDb } = require('../lib/database')
 
 module.exports = function register_paymentsHandlers() {
@@ -15,7 +16,7 @@ ipcMain.handle('payments:next-receipt', () => {
   return `RCP-${year}-${next}`
 })
 
-ipcMain.handle('payments:post', (_, data) => {
+safeHandle('payments:post', (_, data) => {
   const db = getDb()
   const { student_id, amount_paid, payment_date, payment_method, reference = '', posted_by = 'admin' } = data
   // Enforce current term only
@@ -157,7 +158,7 @@ ipcMain.handle('payments:receipt-data', (_, id) => {
 })
 
 
-ipcMain.handle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
+safeHandle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
   const db = getDb()
   const payment = db.prepare('SELECT * FROM payments WHERE id=?').get([payment_id])
   if (!payment) throw new Error('Payment not found')

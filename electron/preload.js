@@ -199,6 +199,14 @@ contextBridge.exposeInMainWorld('api', {
   payrollPayslipHtml:     (d)    => ipcRenderer.invoke('payroll:payslip-html', d),
   payrollSummaryHtml:     (id)   => ipcRenderer.invoke('payroll:summary-html', id),
 
+  // ── System Errors
+  errorsList:           (d)  => ipcRenderer.invoke('errors:list', d),
+  errorsResolve:        (d)  => ipcRenderer.invoke('errors:resolve', d),
+  errorsResolveAll:     ()   => ipcRenderer.invoke('errors:resolve-all'),
+  errorsDelete:         (id) => ipcRenderer.invoke('errors:delete', id),
+  errorsClearResolved:  ()   => ipcRenderer.invoke('errors:clear-resolved'),
+  errorsCountUnresolved:()   => ipcRenderer.invoke('errors:count-unresolved'),
+
   // ── Backup
   getDbPath:          ()     => ipcRenderer.invoke('backup:get-db-path'),
   backupLocal:        ()     => ipcRenderer.invoke('backup:local'),

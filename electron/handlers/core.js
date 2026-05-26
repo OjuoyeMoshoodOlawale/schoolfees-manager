@@ -121,7 +121,7 @@ ipcMain.handle('students:list', (_, filters = {}) => {
 ipcMain.handle('students:get', (_, id) => {
   return getDb().prepare('SELECT * FROM students WHERE id=?').get(id)
 })
-ipcMain.handle('students:create', (_, data) => {
+safeHandle('students:create', (_, data) => {
   const db = getDb()
   const { first_name, last_name, other_names='', gender, date_of_birth='', phone='',
     parent_name='', parent_phone='', address='', photo_path='', entry_type='new',
@@ -153,7 +153,7 @@ ipcMain.handle('students:create', (_, data) => {
   }
   return { id: sid }
 })
-ipcMain.handle('students:update', (_, { id, class_id, parent_email='', ...data }) => {
+safeHandle('students:update', (_, { id, class_id, parent_email='', ...data }) => {
   const db = getDb()
   const { first_name, last_name, other_names='', gender, date_of_birth='', phone='',
     parent_name='', parent_phone='', address='', photo_path='', entry_type, boarding_type='day' } = data
@@ -188,7 +188,7 @@ ipcMain.handle('students:update', (_, { id, class_id, parent_email='', ...data }
   }
   return { ok: true }
 })
-ipcMain.handle('students:delete', (_, id) => {
+safeHandle('students:delete', (_, id) => {
   const db = getDb()
   // Block delete if student has any financial records
   const hasPayments = db.prepare('SELECT id FROM payments WHERE student_id=? LIMIT 1').get(id)

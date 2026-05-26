@@ -1,4 +1,5 @@
 const { ipcMain } = require('electron')
+const { safeHandle, logError } = require('./errorHandler')
 const { getDb } = require('../lib/database')
 
 // ── Core billing engine ───────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ function autoRecalcStudentBills(db, student_id, term_id) {
 module.exports = function register_billingHandlers() {
 
 // ─── Student Bill Summary ─────────────────────────────────────────────────────
-ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
+safeHandle('bills:student-summary', (_, { student_id, term_id }) => {
   const db = getDb()
   const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
   if (!tid) return null
@@ -164,7 +165,7 @@ ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
 })
 
 // ─── Generate Bills for Whole Class ──────────────────────────────────────────
-ipcMain.handle('bills:generate-class', (_, { class_id, term_id }) => {
+safeHandle('bills:generate-class', (_, { class_id, term_id }) => {
   const db  = getDb()
   const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
   if (!tid) throw new Error('No current term set')

@@ -7,7 +7,7 @@ import {
   DollarSign, FileText, BookMarked, Scale, MessageSquare, Shield,
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
-  Briefcase, UserCog, Play, Minus,
+  Briefcase, UserCog, Play, Minus, AlertTriangle,
   ShoppingBag, Tag, Truck, PieChart,
   Package, BarChart2 as BarChartIcon, Archive
 } from 'lucide-react'
@@ -105,21 +105,28 @@ const NAV_GROUPS = [
     items: [
       { to: '/sessions', icon: Calendar, label: 'Sessions & Terms' },
       { to: '/classes',  icon: BookOpen, label: 'Classes' },
-      { to: '/users',    icon: Shield,   label: 'Users & Access' },
+      { to: '/users',         icon: Shield,        label: 'Users & Access' },
+      { to: '/system-errors', icon: AlertTriangle, label: 'System Errors', badge: 'errorCount' },
     ]
   },
 ]
 
-function NavItem({ to, icon: Icon, label, exact }) {
+function NavItem({ to, icon: Icon, label, exact, badge }) {
   return (
     <NavLink to={to} end={exact}
       className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-      <Icon size={14} className="flex-shrink-0" />{label}
+      <Icon size={14} className="flex-shrink-0" />
+      <span className="flex-1">{label}</span>
+      {badge > 0 && (
+        <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </NavLink>
   )
 }
 
-function NavGroup({ section, items, accounting, accountingEnabled, payroll, payrollEnabled, inventory, inventoryEnabled }) {
+function NavGroup({ section, items, accounting, accountingEnabled, payroll, payrollEnabled, inventory, inventoryEnabled, errorCount }) {
   const [open, setOpen] = useState(true)
   if (accounting && !accountingEnabled) return null
   if (payroll    && !payrollEnabled)    return null
@@ -135,7 +142,11 @@ function NavGroup({ section, items, accounting, accountingEnabled, payroll, payr
           {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         </button>
       )}
-      {open && items.map(item => <NavItem key={item.to} {...item} />)}
+      {open && items.map(item => (
+        <NavItem key={item.to} {...item}
+          badge={item.badge === 'errorCount' ? errorCount : item.badge}
+        />
+      ))}
     </div>
   )
 }
@@ -147,6 +158,11 @@ export default function Sidebar() {
   const [accounting, setAccounting]   = useState(false)
   const [payrollOn,  setPayrollOn]    = useState(false)
   const [inventoryOn, setInventoryOn] = useState(false)
+  const [errorCount,  setErrorCount]  = useState(0)
+
+  const loadErrorCount = () => {
+    window.api?.errorsCountUnresolved?.().then(n => setErrorCount(n || 0)).catch(() => {})
+  }
 
   useEffect(() => {
     window.api?.getSettings().then(s => {
@@ -157,6 +173,10 @@ export default function Sidebar() {
       if (s?.inventory_enabled)  setInventoryOn(!!s.inventory_enabled)
     })
     window.api?.getCurrentTerm().then(t => setCurrentTerm(t))
+    // Load error count and refresh every 60 seconds
+    loadErrorCount()
+    const interval = setInterval(loadErrorCount, 60_000)
+    return () => clearInterval(interval)
   }, [])
 
   return (
@@ -204,6 +224,7 @@ export default function Sidebar() {
             payrollEnabled={payrollOn}
             inventory={group.inventory}
             inventoryEnabled={inventoryOn}
+            errorCount={errorCount}
           />
         ))}
       </nav>

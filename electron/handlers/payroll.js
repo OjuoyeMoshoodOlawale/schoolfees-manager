@@ -23,6 +23,7 @@
  */
 
 const { ipcMain } = require('electron')
+const { safeHandle, logError } = require('./errorHandler')
 const { getDb }   = require('../lib/database')
 
 function checkPayroll() {
@@ -74,7 +75,7 @@ ipcMain.handle('payroll:grades-list', () => {
   return getDb().prepare('SELECT * FROM salary_grades ORDER BY name').all()
 })
 
-ipcMain.handle('payroll:grade-save', (_, d) => {
+safeHandle('payroll:grade-save', (_, d) => {
   checkPayroll()
   const db = getDb()
   if (d.id) {
@@ -115,7 +116,7 @@ ipcMain.handle('payroll:staff-get', (_, id) => {
   return getDb().prepare('SELECT s.*, g.name as grade_name FROM staff s LEFT JOIN salary_grades g ON g.id=s.salary_grade_id WHERE s.id=?').get([id])
 })
 
-ipcMain.handle('payroll:staff-save', (_, d) => {
+safeHandle('payroll:staff-save', (_, d) => {
   checkPayroll()
   const db = getDb()
   // Auto-generate staff number if not provided
@@ -240,7 +241,7 @@ ipcMain.handle('payroll:run-preview', (_, { month, year }) => {
 })
 
 // Create/run payroll
-ipcMain.handle('payroll:run-create', (_, { month, year, notes = '', created_by = 'admin' }) => {
+safeHandle('payroll:run-create', (_, { month, year, notes = '', created_by = 'admin' }) => {
   checkPayroll()
   const db = getDb()
 

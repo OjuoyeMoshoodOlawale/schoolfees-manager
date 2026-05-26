@@ -22,6 +22,7 @@
  */
 
 const { ipcMain } = require('electron')
+const { safeHandle, logError } = require('./errorHandler')
 const { getDb }   = require('../lib/database')
 
 const PAID_FROM_ACCOUNT = {
@@ -167,7 +168,7 @@ ipcMain.handle('expenses:get', (_, id) => {
     WHERE e.id=?`).get([id])
 })
 
-ipcMain.handle('expenses:save', (_, d) => {
+safeHandle('expenses:save', (_, d) => {
   const db = getDb()
   const fields = ['category_id','supplier_id','description','amount','expense_date',
                   'paid_from','payment_reference','notes','created_by']
@@ -186,7 +187,7 @@ ipcMain.handle('expenses:save', (_, d) => {
   return { id, expense_number: expNum }
 })
 
-ipcMain.handle('expenses:approve', (_, { id, approved_by }) => {
+safeHandle('expenses:approve', (_, { id, approved_by }) => {
   const db      = getDb()
   const expense = db.prepare('SELECT * FROM expenses WHERE id=?').get([id])
   if (!expense) throw new Error('Expense not found')
