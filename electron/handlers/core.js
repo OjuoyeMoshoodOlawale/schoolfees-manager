@@ -43,6 +43,24 @@ ipcMain.handle('sessions:set-current', (_, sessionId, termId) => {
   db.prepare('UPDATE terms SET is_current=0').run()
   db.prepare('UPDATE terms SET is_current=1 WHERE id=?').run(termId)
   db.exec('COMMIT')
+
+  // Auto-generate bills for every active student in the new current term.
+  // Runs in background — any individual failure is non-fatal.
+  const autoRecalc = getAutoRecalc()
+  if (autoRecalc) {
+    const students = db.prepare(
+      "SELECT student_id FROM student_status WHERE term_id=? AND status='active'"
+    ).all(termId)
+    for (const { student_id } of students) {
+      try {
+        db.exec('BEGIN')
+        autoRecalc(db, student_id, termId)
+        db.exec('COMMIT')
+      } catch(e) { try { db.exec('ROLLBACK') } catch {} }
+    }
+    console.log(`[auto-bill] Generated bills for ${students.length} students in term ${termId}`)
+  }
+
   return { ok: true }
 })
 
@@ -210,6 +228,15 @@ ipcMain.handle('status:update', (_, { student_id, status }) => {
   if (!curr) throw new Error('No current term set')
   db.prepare('UPDATE student_status SET status=? WHERE student_id=? AND term_id=?')
     .run([status, student_id, curr.id])
+  // Recalc bills — inactive students get their pending bills frozen
+  try {
+    const autoRecalc = getAutoRecalc()
+    if (autoRecalc) {
+      db.exec('BEGIN')
+      autoRecalc(db, student_id, curr.id)
+      db.exec('COMMIT')
+    }
+  } catch(e) { try { db.exec('ROLLBACK') } catch {} }
   return { ok: true }
 })
 

@@ -198,16 +198,20 @@ export default function StudentBillPage() {
             </thead>
             <tbody>
               {bills.map(b => (
-                <tr key={b.id} className={b.status === 'waived' ? 'opacity-40' : ''}>
+                <tr key={b.id} className={b.status === 'waived' ? 'opacity-40' : b.status === 'frozen' ? 'opacity-50 bg-gray-50' : ''}>
                   <td className={`font-medium ${b.status === 'waived' ? 'line-through' : ''}`}>{b.fee_item_name}</td>
                   <td>{b.is_compulsory
                     ? <span className="badge-green badge">Compulsory</span>
                     : <span className="badge-yellow badge">Elective</span>}
                   </td>
-                  <td><span className={`badge ${b.status === 'waived' ? 'badge-gray' : 'badge-blue'}`}>{b.status}</span></td>
+                  <td>
+                    <span className={`badge ${b.status === 'waived' ? 'badge-gray' : b.status === 'frozen' ? 'badge-gray' : 'badge-blue'}`}>
+                      {b.status === 'frozen' ? '❄ frozen' : b.status}
+                    </span>
+                  </td>
                   <td className="text-right font-semibold">{fmt(b.amount)}</td>
                   <td className="text-right">
-                    {canEdit && (
+                    {canEdit && b.status !== 'frozen' && (
                       <button
                         onClick={() => onWaive(b)}
                         className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"

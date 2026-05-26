@@ -245,7 +245,7 @@ function initSchema() {
       bill_config_id INTEGER NOT NULL REFERENCES bill_config(id),
       amount REAL NOT NULL,
       is_compulsory INTEGER NOT NULL DEFAULT 1,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','waived')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','waived','frozen')),
       generated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(student_id, bill_config_id)
     );
@@ -399,6 +399,33 @@ function migrateSchema() {
   ]
   for (const sql of migrations) {
     try { db.exec(sql) } catch {} // ignore if column already exists
+  }
+
+  // Widen student_bills.status CHECK to include 'frozen' (inactive student bills).
+  // SQLite can't ALTER CHECK constraints, so we rebuild the table if it still has the old constraint.
+  try {
+    const tblSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='student_bills'").get()?.sql || ''
+    if (tblSql.includes("IN ('pending','waived')") && !tblSql.includes("'frozen'")) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS student_bills_new (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          student_id      INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+          term_id         INTEGER NOT NULL REFERENCES terms(id),
+          bill_config_id  INTEGER NOT NULL REFERENCES bill_config(id),
+          amount          REAL NOT NULL,
+          is_compulsory   INTEGER DEFAULT 1,
+          status          TEXT NOT NULL DEFAULT 'pending',
+          created_at      TEXT DEFAULT (datetime('now')),
+          UNIQUE(student_id, term_id, bill_config_id)
+        );
+        INSERT INTO student_bills_new SELECT * FROM student_bills;
+        DROP TABLE student_bills;
+        ALTER TABLE student_bills_new RENAME TO student_bills;
+      `)
+      console.log('[DB] Migrated student_bills: widened status CHECK to include frozen')
+    }
+  } catch(e) {
+    console.warn('[DB] student_bills migration skipped:', e.message)
   }
 }
 
