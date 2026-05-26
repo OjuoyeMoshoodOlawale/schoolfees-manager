@@ -306,54 +306,56 @@ ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
     ORDER BY total_billed DESC
   `).all(params)
 
-  // By class — aggregate bills and payments independently using student_bills as class anchor
-  // Using student_bills for class lookup (not student_status) avoids missing payments
-  // where payment term_id doesn't perfectly match student_status term_id
+  // By class: bills and payments aggregated separately to avoid JOIN multiplication
+  // Student→class lookup uses student_status as primary source (catches students with
+  // payments but no bills yet), then overrides with bills-derived class for accuracy.
   const billsByClass = db.prepare(`
-    SELECT ss.class_id,
-      COALESCE(SUM(sb.amount), 0) as total_billed
+    SELECT ss.class_id, COALESCE(SUM(sb.amount), 0) as total_billed
     FROM student_bills sb
-    JOIN student_status ss ON ss.student_id = sb.student_id AND ss.term_id = sb.term_id
+    JOIN student_status ss ON ss.student_id=sb.student_id AND ss.term_id=sb.term_id
     WHERE sb.status NOT IN ('waived','frozen')
     ${term_id ? 'AND sb.term_id=?' : ''}
     GROUP BY ss.class_id
   `).all(params)
 
-  // Get class_id for each student who has bills this term — used as lookup for payments
-  const studentClassMap_rows = db.prepare(`
+  // Base class map from student_status — catches students with payments but missing bills
+  const studentClassMap = new Map(
+    db.prepare(`SELECT student_id, class_id FROM student_status ${term_id ? 'WHERE term_id=?' : ''}`)
+      .all(params).map(r => [r.student_id, r.class_id])
+  )
+  // Override with bills-derived class (more accurate when bills exist)
+  db.prepare(`
     SELECT DISTINCT sb.student_id, ss.class_id
     FROM student_bills sb
-    JOIN student_status ss ON ss.student_id = sb.student_id AND ss.term_id = sb.term_id
-    WHERE sb.status NOT IN ('waived','frozen')
-    ${term_id ? 'AND sb.term_id=?' : ''}
-  `).all(params)
-  const studentClassMap = new Map(studentClassMap_rows.map(r => [r.student_id, r.class_id]))
+    JOIN student_status ss ON ss.student_id=sb.student_id AND ss.term_id=sb.term_id
+    WHERE sb.status NOT IN ('waived','frozen') ${term_id ? 'AND sb.term_id=?' : ''}
+  `).all(params).forEach(r => studentClassMap.set(r.student_id, r.class_id))
 
-  // Sum payments per student, then group by class using the bill-derived class lookup
+  // Sum payments per student
   const paymentRows = db.prepare(`
     SELECT student_id, COALESCE(SUM(amount_paid), 0) as paid
     FROM payments
-    WHERE is_reversed = 0 AND amount_paid > 0
-    ${term_id ? 'AND term_id=?' : ''}
+    WHERE is_reversed=0 AND amount_paid>0 ${term_id ? 'AND term_id=?' : ''}
     GROUP BY student_id
   `).all(params)
 
-  // Aggregate payment totals per class
   const paidPerClass = new Map()
   for (const row of paymentRows) {
     const classId = studentClassMap.get(row.student_id)
-    if (classId === undefined) continue // payment for student with no bills in this term
+    if (classId === undefined) continue
     paidPerClass.set(classId, (paidPerClass.get(classId) || 0) + Number(row.paid))
   }
 
-  // Join bills and payments by class
+  // Merge classes from both bills and payments so nothing is dropped
   const classNames = db.prepare('SELECT id, name FROM classes').all()
-  const classMap = new Map(classNames.map(c => [c.id, c.name]))
+  const classMap   = new Map(classNames.map(c => [c.id, c.name]))
+  const allClassIds = new Set([...billsByClass.map(r => r.class_id), ...paidPerClass.keys()])
+  const billsMap   = new Map(billsByClass.map(r => [r.class_id, Number(r.total_billed)]))
 
-  const byClass = billsByClass.map(r => ({
-    class_name:   classMap.get(r.class_id) || `Class ${r.class_id}`,
-    total_billed: Number(r.total_billed),
-    total_paid:   Number(paidPerClass.get(r.class_id) || 0),
+  const byClass = [...allClassIds].map(cid => ({
+    class_name:   classMap.get(cid) || `Class ${cid}`,
+    total_billed: billsMap.get(cid) || 0,
+    total_paid:   paidPerClass.get(cid) || 0,
   })).sort((a, b) => a.class_name.localeCompare(b.class_name))
 
   // Payment methods — exclude reversed payments
