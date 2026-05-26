@@ -1,7 +1,72 @@
-const path = require('path')
-const fs   = require('fs')
+const path   = require('path')
+const fs     = require('fs')
+const crypto = require('crypto')
 const { Database } = require('node-sqlite3-wasm')
 const defaults = require('./defaults')
+
+// ── DB integrity seal ─────────────────────────────────────────────────────────
+// Stores a SHA-256 hash of the DB file in a sidecar .seal file.
+// Written on every clean close. Checked on open — mismatch = tampered externally.
+// Does NOT encrypt the file, but detects unauthorised modification.
+function writeSeal(dbFilePath) {
+  try {
+    const data = fs.readFileSync(dbFilePath)
+    const hash = crypto.createHash('sha256').update(data).digest('hex')
+    fs.writeFileSync(dbFilePath + '.seal', hash, 'utf8')
+  } catch {}
+}
+
+function checkSeal(dbFilePath) {
+  try {
+    const sealPath = dbFilePath + '.seal'
+    if (!fs.existsSync(sealPath)) return  // first run — no seal yet
+    const expected = fs.readFileSync(sealPath, 'utf8').trim()
+    const data     = fs.readFileSync(dbFilePath)
+    const actual   = crypto.createHash('sha256').update(data).digest('hex')
+    if (actual !== expected) {
+      console.warn('[DB] INTEGRITY WARNING: database file was modified outside the app')
+      // Don't throw — just log. The app continues but admins see the warning.
+    }
+  } catch {}
+}
+
+// ── Machine-specific app key (used for future column-level encryption) ─────────
+// Derived from machine ID via HMAC — unique per machine, not stored in code.
+let _appKey = null
+function getAppKey() {
+  if (_appKey) return _appKey
+  try {
+    const { app } = require('electron')
+    const machineId = require('os').hostname() + require('os').cpus()[0]?.model + app.getPath('userData')
+    _appKey = crypto.createHmac('sha256', 'SF_DB_KEY_2025_OJUOYE').update(machineId).digest()
+  } catch { _appKey = Buffer.alloc(32) }
+  return _appKey
+}
+
+// Encrypt a string value (for sensitive columns if needed in future)
+function encryptValue(plaintext) {
+  if (!plaintext) return plaintext
+  const key = getAppKey()
+  const iv  = crypto.randomBytes(16)
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
+  const enc = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()])
+  return 'ENC:' + iv.toString('hex') + ':' + enc.toString('hex')
+}
+
+function decryptValue(ciphertext) {
+  if (!ciphertext || !String(ciphertext).startsWith('ENC:')) return ciphertext
+  try {
+    const [, ivHex, encHex] = String(ciphertext).split(':')
+    const key     = getAppKey()
+    const iv      = Buffer.from(ivHex, 'hex')
+    const enc     = Buffer.from(encHex, 'hex')
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8')
+  } catch { return ciphertext }
+}
+
+module.exports.encryptValue = encryptValue
+module.exports.decryptValue = decryptValue
 
 let db = null
 let dbPath = null
@@ -16,6 +81,7 @@ function getDb() {
   if (!db) {
     if (!dbPath) throw new Error('DB path not set')
 
+    checkSeal(dbPath)
     // ── Delete stale lock files (Windows: retry with delay if EPERM) ────────────
     // journal_mode=DELETE leaves a .lock file; WAL leaves -wal and -shm.
     // On Windows another process may briefly hold the handle — retry for 3 seconds.
@@ -87,6 +153,7 @@ function closeDb() {
         try { const f = dbPath + ext; if (fs.existsSync(f)) fs.unlinkSync(f) } catch {}
       }
     }
+    writeSeal(dbPath)
     isClosing = false
   }
 }

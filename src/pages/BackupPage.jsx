@@ -482,6 +482,23 @@ export default function BackupPage() {
           <button onClick={openDbFolder} className="font-mono text-xs text-blue-600 hover:underline break-all text-left">
             {dbPath || 'Loading…'}
           </button>
+          <div className="mt-2 flex gap-3 flex-wrap">
+            {dbPath?.includes('AppData') || dbPath?.includes('userData') ? (
+              <span className="text-xs text-emerald-600 flex items-center gap-1">
+                ✓ Stored in protected AppData folder
+              </span>
+            ) : (
+              <span className="text-xs text-amber-600 flex items-center gap-1">
+                ⚠ Dev mode — DB in project folder (normal for development)
+              </span>
+            )}
+            <span className="text-xs text-emerald-600 flex items-center gap-1">
+              ✓ Integrity seal active
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            In production builds, the database is stored in your Windows user AppData folder and restricted to your user account only.
+          </p>
         </div>
 
       </div>

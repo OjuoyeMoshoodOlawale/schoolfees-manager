@@ -5,12 +5,39 @@ const fs   = require('fs')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
 // ─── DB Path Setup ────────────────────────────────────────────────────────────
+// Dev:        <project>/database/schoolfees.db  (easy to inspect during development)
+// Production: C:\Users\USER\AppData\Roaming\SchoolFees Manager\data\schoolfees.db
+//             (hidden from casual access, survives app updates/reinstalls)
 const dbDir = isDev
   ? path.join(__dirname, '..', 'database')
-  : path.join(process.resourcesPath, 'database')
+  : path.join(app.getPath('userData'), 'data')
 
 if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true })
 const dbPath = path.join(dbDir, 'schoolfees.db')
+
+// ── In production: migrate DB from old resources path if it exists there ──────
+if (!isDev) {
+  const oldPath = path.join(process.resourcesPath, 'database', 'schoolfees.db')
+  if (fs.existsSync(oldPath) && !fs.existsSync(dbPath)) {
+    try {
+      fs.copyFileSync(oldPath, dbPath)
+      console.log('[main] Migrated DB from resources to userData')
+      fs.unlinkSync(oldPath)
+    } catch (e) { console.warn('[main] DB migration warning:', e.message) }
+  }
+
+  // Restrict NTFS permissions on the data folder so only the current user can read it
+  // icacls: remove inheritance, reset to owner-only, grant current user full control
+  try {
+    const { execSync } = require('child_process')
+    if (process.platform === 'win32') {
+      execSync(`icacls "${dbDir}" /inheritance:r /grant:r "%USERNAME%:F" /T /C`, { stdio: 'ignore' })
+      console.log('[main] DB folder permissions restricted to current user')
+    } else {
+      execSync(`chmod 700 "${dbDir}"`, { stdio: 'ignore' })
+    }
+  } catch {}
+}
 
 // ─── Safe local-file protocol — replaces file:// so webSecurity stays ON ─────
 // Usage in renderer: <img src="localfile:///absolute/path/to/image.png">
