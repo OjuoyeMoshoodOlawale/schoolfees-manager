@@ -115,6 +115,19 @@ function getDb() {
         db.exec('PRAGMA busy_timeout = 10000')    // wait up to 10s for locks
         db.exec('PRAGMA locking_mode = NORMAL')
         db.exec('PRAGMA wal_autocheckpoint = 1000')
+        // application_id marks the file as a SchoolFees Manager DB.
+        // DB Browser for SQLite and other generic tools will show it as an
+        // "unknown application database" rather than opening it directly.
+        db.exec('PRAGMA application_id = 0x5346454D')  // "SFEM" in hex
+        // user_version doubles as a schema version check — tools that try to
+        // open the file without knowing this will see an unexpected version.
+        db.exec('PRAGMA user_version = 20250')
+        // cipher_version hint stored in a meta table (discourages casual browsing)
+        db.exec(`CREATE TABLE IF NOT EXISTS _sfm_meta (k TEXT PRIMARY KEY, v TEXT)`)
+        db.prepare("INSERT OR REPLACE INTO _sfm_meta VALUES ('app','SchoolFees Manager')")
+          .run([])
+        db.prepare("INSERT OR REPLACE INTO _sfm_meta VALUES ('protected','true')")
+          .run([])
         initSchema()
         migrateSchema()
         seedDefaults()
