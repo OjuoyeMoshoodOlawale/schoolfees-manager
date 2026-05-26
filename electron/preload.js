@@ -162,4 +162,5 @@ contextBridge.exposeInMainWorld('api', {
   checkUpdate:        ()     => ipcRenderer.invoke('app:check-update'),
   getDbDir:           ()     => ipcRenderer.invoke('app:get-db-dir'),
   printHtml:          (d)    => ipcRenderer.invoke('app:print-html', d),
+  setContentProtection: (e) => ipcRenderer.invoke('app:set-content-protection', e),
 })

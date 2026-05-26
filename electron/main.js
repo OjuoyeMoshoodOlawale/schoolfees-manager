@@ -50,6 +50,12 @@ ipcMain.handle('shell:open-path', (_, p) => shell.openPath(p))
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('app:get-db-dir', () => dbDir)
 
+// Toggle OS-level screenshot/screen capture protection for sensitive screens
+ipcMain.handle('app:set-content-protection', (_, enabled) => {
+  if (win) win.setContentProtection(!!enabled)
+  return { ok: true }
+})
+
 // ─── Clean Print — renders pure HTML in a hidden window, no app chrome ─────────
 ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
   return new Promise((resolve) => {

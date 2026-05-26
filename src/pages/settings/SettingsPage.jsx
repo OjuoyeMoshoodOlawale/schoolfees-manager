@@ -5,6 +5,7 @@ import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Prin
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import RegNumberTab from './RegNumberTab'
+import AccountingTab from './AccountingTab'
 
 const TABS = [
   { id: 'school',       label: 'School Info',   icon: Building2 },
@@ -373,46 +374,13 @@ export default function SettingsPage() {
 
         {/* ── Accounting Module ── */}
         {tab === 'accounting' && (
-          <div className="card space-y-4">
-            <h3 className="text-sm font-semibold text-gray-700">Accounting Module Unlock</h3>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 space-y-1">
-              <p className="font-semibold">Premium Feature</p>
-              <p>The double-entry accounting module (chart of accounts, journal, ledger, trial balance) requires an unlock key. Contact your SchoolFees Manager agent to obtain one.</p>
-            </div>
-            <div className="space-y-3">
-              <label className="form-label">Accounting Unlock Key</label>
-              <div className="flex gap-2">
-                <input
-                  className="form-input font-mono flex-1 tracking-widest"
-                  placeholder="ACCT-XXXX-XXXX"
-                  value={unlockKey}
-                  onChange={e => setUnlockKey(e.target.value.toUpperCase())}
-                  maxLength={14}
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary whitespace-nowrap"
-                  disabled={unlocking || !unlockKey.trim()}
-                  onClick={async () => {
-                    setUnlocking(true)
-                    try {
-                      const r = await window.api.unlockAccounting({ key: unlockKey })
-                      if (r.ok) {
-                        toast.success('Accounting module unlocked! Reload the app to see the menu.')
-                        await refreshSettings()
-                      } else {
-                        toast.error(r.error || 'Invalid key')
-                      }
-                    } catch(e) { toast.error(e.message) }
-                    finally { setUnlocking(false) }
-                  }}
-                >
-                  <Key size={14} /> {unlocking ? 'Verifying…' : 'Unlock'}
-                </button>
-              </div>
-              <p className="text-xs text-gray-400">Format: ACCT-XXXX-XXXX — unique per school name</p>
-            </div>
-          </div>
+          <AccountingTab
+            unlockKey={unlockKey}
+            setUnlockKey={setUnlockKey}
+            unlocking={unlocking}
+            setUnlocking={setUnlocking}
+            refreshSettings={refreshSettings}
+          />
         )}
 
         {/* ── Backup ── */}
