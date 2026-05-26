@@ -10,6 +10,7 @@ import {
   PageHeader, DataTable, SearchInput,
   Confirm, Spinner, exportToExcel
 } from '../../components/ui'
+import { printCleanHtml } from '../../lib/utils'
 
 const fmtD = d =>
   d ? new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
@@ -23,10 +24,39 @@ function ReceiptModal({ data, onClose, fmt, school }) {
   const { payment, bills = [], totalBilled, totalPaid } = data
   const balance = totalBilled - totalPaid
 
-  const handlePrint = () => {
-    document.body.classList.add(`print-${mode}`)
-    window.print()
-    setTimeout(() => document.body.classList.remove(`print-${mode}`), 800)
+  const handlePrint = async () => {
+    const currency = school?.currency_symbol || '₦'
+    const fmtN = n => currency + Number(n||0).toLocaleString('en-NG',{minimumFractionDigits:2})
+    const billRows = bills.map(b => `<tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:5px 10px">${b.fee_item_name||b.name||'—'}</td>
+      <td style="text-align:right;padding:5px 10px">${fmtN(b.amount)}</td>
+    </tr>`).join('')
+    const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:18px">
+        <h1 style="font-size:14pt;font-weight:bold;text-transform:uppercase;margin:0">${school?.school_name||'School'}</h1>
+        <p style="margin:4px 0 0;font-size:12pt;font-weight:bold">PAYMENT RECEIPT</p>
+        <p style="margin:2px 0 0;font-size:10pt;color:#6b7280">${payment.receipt_number}</p>
+      </div>
+      <table style="width:100%;font-size:10pt;margin-bottom:12px">
+        <tr><td style="color:#6b7280;padding:3px 0">Student</td><td style="font-weight:600">${payment.last_name||''} ${payment.first_name||''}</td></tr>
+        <tr><td style="color:#6b7280;padding:3px 0">Reg #</td><td>${payment.reg_number||'—'}</td></tr>
+        <tr><td style="color:#6b7280;padding:3px 0">Class</td><td>${payment.class_name||'—'}</td></tr>
+        <tr><td style="color:#6b7280;padding:3px 0">Term</td><td>${payment.term_name||''}, ${payment.session_name||''}</td></tr>
+        <tr><td style="color:#6b7280;padding:3px 0">Date</td><td>${payment.payment_date}</td></tr>
+        <tr><td style="color:#6b7280;padding:3px 0">Method</td><td style="text-transform:uppercase">${payment.payment_method||''}</td></tr>
+        ${payment.reference ? `<tr><td style="color:#6b7280;padding:3px 0">Ref</td><td>${payment.reference}</td></tr>` : ''}
+      </table>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;text-align:center;padding:14px;margin:14px 0">
+        <p style="margin:0;font-size:11pt;color:#6b7280">Amount Paid</p>
+        <p style="margin:4px 0 0;font-size:22pt;font-weight:bold;color:#1d4ed8">${fmtN(payment.amount_paid)}</p>
+      </div>
+      <div style="background:${balance>0?'#fef2f2':'#f0fdf4'};border:1px solid ${balance>0?'#fecaca':'#bbf7d0'};border-radius:8px;text-align:center;padding:10px">
+        <p style="margin:0;font-size:10pt;color:#6b7280">${balance>0?'Outstanding Balance':'Account Status'}</p>
+        <p style="margin:3px 0 0;font-size:15pt;font-weight:bold;color:${balance>0?'#dc2626':'#16a34a'}">${balance>0?fmtN(balance)+' remaining':'&#10003; Fully Paid'}</p>
+      </div>
+      ${school?.receipt_footer ? `<p style="text-align:center;margin-top:12px;font-size:9pt;color:#9ca3af">${school.receipt_footer}</p>` : ''}
+    </div>`
+    await printCleanHtml(html)
   }
 
   const handleEmailReceipt = async () => {

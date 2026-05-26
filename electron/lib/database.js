@@ -496,6 +496,7 @@ function migrateSchema() {
     "ALTER TABLE school_settings ADD COLUMN reg_number_prefix TEXT DEFAULT 'STU'",
     "ALTER TABLE school_settings ADD COLUMN reg_seq_reset TEXT DEFAULT 'year'",
     "ALTER TABLE school_settings ADD COLUMN auto_send_receipt INTEGER DEFAULT 1",
+    "ALTER TABLE school_settings ADD COLUMN auto_send_email_receipt INTEGER DEFAULT 1",
     "ALTER TABLE sms_log   ADD COLUMN error_reason TEXT DEFAULT ''",
     "ALTER TABLE email_log ADD COLUMN error_reason TEXT DEFAULT ''",
   ]

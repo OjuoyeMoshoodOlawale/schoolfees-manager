@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'react-toastify'
-import { Users, Download, Loader } from 'lucide-react'
+import { Users, Download, Loader, Printer } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
+import { printCleanHtml } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
 
 const STATUS_STYLE = { paid: 'bg-emerald-100 text-emerald-700', partial: 'bg-amber-100 text-amber-700', unpaid: 'bg-red-100 text-red-700' }
@@ -17,6 +18,7 @@ export default function ClassFeeStatusPage() {
   const [rows,     setRows]     = useState([])
   const [loading,  setLoading]  = useState(false)
   const [filter,   setFilter]   = useState('all')
+  const [printing, setPrinting] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -63,6 +65,45 @@ export default function ClassFeeStatusPage() {
   const totBilled = filtered.reduce((s,r) => s + r.total_expected, 0)
   const totPaid   = filtered.reduce((s,r) => s + r.total_paid, 0)
   const totBal    = filtered.reduce((s,r) => s + r.balance, 0)
+
+
+  const handlePrint = async () => {
+    if (!rows.length) return
+    setPrinting(true)
+    try {
+      const className = classes.find(c => String(c.id) === String(selClass))?.name || ''
+      const termName  = terms.find(t => String(t.id) === String(selTerm))?.name || ''
+      const displayed = filter === 'all' ? rows : rows.filter(r => r.status === filter)
+      const tableRows = displayed.map(r => `<tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:5px 10px">${r.reg_number}</td>
+        <td style="padding:5px 10px">${r.last_name}, ${r.first_name}</td>
+        <td style="text-align:right;padding:5px 10px">${'₦'}${Number(r.billed||0).toLocaleString('en-NG',{minimumFractionDigits:2})}</td>
+        <td style="text-align:right;padding:5px 10px;color:#059669">${'₦'}${Number(r.paid||0).toLocaleString('en-NG',{minimumFractionDigits:2})}</td>
+        <td style="text-align:right;padding:5px 10px;color:${Number(r.balance)>0?'#dc2626':'#059669'}">${'₦'}${Number(r.balance||0).toLocaleString('en-NG',{minimumFractionDigits:2})}</td>
+        <td style="text-align:center;padding:5px 10px;text-transform:uppercase;font-size:9pt">${r.status}</td>
+      </tr>`).join('')
+      const html = `<div style="font-family:Arial,sans-serif;max-width:750px;margin:0 auto;padding:20px">
+        <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:20px">
+          <h1 style="font-size:16pt;font-weight:bold;text-transform:uppercase;margin:0">Class Fee Status</h1>
+          <p style="margin:4px 0 0;font-size:11pt">${className} — ${termName}${filter !== 'all' ? ' — '+filter.toUpperCase() : ''}</p>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:10pt">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 10px">Reg #</th>
+            <th style="text-align:left;padding:7px 10px">Name</th>
+            <th style="text-align:right;padding:7px 10px">Billed</th>
+            <th style="text-align:right;padding:7px 10px">Paid</th>
+            <th style="text-align:right;padding:7px 10px">Balance</th>
+            <th style="text-align:center;padding:7px 10px">Status</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <p style="margin-top:10px;font-size:9pt;color:#6b7280">${displayed.length} student(s)</p>
+      </div>`
+      await printCleanHtml(html)
+    } catch(e) { toast.error('Print failed: ' + e.message) }
+    finally { setPrinting(false) }
+  }
 
   return (
     <div>

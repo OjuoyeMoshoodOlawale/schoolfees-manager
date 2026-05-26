@@ -91,40 +91,27 @@ export default function SettingsPage() {
     finally { setTestingEmail(false) }
   }
 
-  const handleTestPrint = () => {
-    const w = window.open('', '_blank', 'width=800,height=600')
+  const handleTestPrint = async () => {
     const settings = watch()
-    w.document.write(`
-      <html><head><title>Test Print</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .center { text-align: center; }
-        .box { border: 2px solid #000; padding: 12px; margin: 16px 0; }
-        .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px; }
-        @media print { button { display: none; } }
-      </style></head>
-      <body>
-      <div class="center">
-        <h2 style="text-transform:uppercase">${settings.school_name || 'Your School Name'}</h2>
-        <p style="font-size:12px">${settings.address || 'School Address'}</p>
-        <div class="box" style="display:inline-block;padding:4px 16px"><b>OFFICIAL FEE RECEIPT — TEST PRINT</b></div>
-      </div>
-      <div class="box">
-        <div class="row"><span>Receipt No.</span><span>RCP-TEST-0001</span></div>
-        <div class="row"><span>Student</span><span>Ade Johnson</span></div>
-        <div class="row"><span>Class</span><span>JSS 1</span></div>
-        <div class="row"><span>Term</span><span>First Term · 2024/2025</span></div>
-        <div class="row"><span>Payment Method</span><span>Cash</span></div>
-        <div class="row"><span>Date</span><span>${new Date().toLocaleDateString('en-NG')}</span></div>
-        <div class="row" style="font-weight:bold;font-size:16px"><span>Amount Paid</span><span>₦50,000.00</span></div>
-      </div>
-      <p style="text-align:center;font-size:11px;margin-top:8px">${settings.receipt_footer || 'Thank you for your payment.'}</p>
-      <div style="text-align:center;margin-top:16px">
-        <button onclick="window.print()" style="padding:8px 24px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">Print</button>
-      </div>
-      </body></html>
-    `)
-    w.document.close()
+    const html = `
+      <div style="font-family:Arial,sans-serif;padding:20px;max-width:400px;margin:0 auto">
+        <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+          <h2 style="text-transform:uppercase;margin:0">${settings.school_name || 'Your School Name'}</h2>
+          <p style="font-size:12px;margin:4px 0 0;color:#6b7280">${settings.address || 'School Address'}</p>
+          <p style="font-size:11px;margin:4px 0 0;font-weight:bold">OFFICIAL FEE RECEIPT — TEST PRINT</p>
+        </div>
+        <div style="border:2px solid #000;padding:12px;margin:0 0 12px">
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Receipt No.</span><span>RCP-TEST-0001</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Student</span><span>Ade Johnson</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Class</span><span>JSS 1</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Term</span><span>First Term · 2024/2025</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Method</span><span>Cash</span></div>
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>Date</span><span>${new Date().toLocaleDateString('en-NG')}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:bold;font-size:15px"><span>Amount Paid</span><span>${settings.currency_symbol || '₦'}50,000.00</span></div>
+        </div>
+        <p style="text-align:center;font-size:11px;color:#6b7280">${settings.receipt_footer || 'Thank you for your payment.'}</p>
+      </div>`
+    await printCleanHtml(html)
   }
 
   if (loading) return <Spinner />
@@ -338,8 +325,9 @@ export default function SettingsPage() {
             </Field>
             <Field label="Auto-send Receipt on Payment">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_send_receipt')} />
-                <span className="text-sm text-gray-700">Automatically send receipt by email and SMS when a payment is posted</span>
+                <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_send_email_receipt')} />
+                <span className="text-sm text-gray-700">Automatically email receipt to parent when a payment is posted</span>
+                <span className="text-xs text-gray-400 ml-1">(SMS receipts are sent from the SMS module)</span>
               </label>
             </Field>
             <div className="grid grid-cols-2 gap-4">

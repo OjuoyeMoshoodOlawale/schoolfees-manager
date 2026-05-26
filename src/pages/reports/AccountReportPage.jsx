@@ -1,8 +1,9 @@
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { BarChart2, Download, Filter } from 'lucide-react'
+import { BarChart2, Download, Filter, Printer, Loader } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
+import { printCleanHtml } from '../../lib/utils'
 
 
 function ReportTable({ title, columns, rows, totals }) {
@@ -106,6 +107,61 @@ export default function AccountReportPage() {
   const grandTotalPaid    = report?.byClass?.reduce((s, r) => s + Number(r.total_paid), 0)   || 0
   const grandTotalBalance = grandTotalBilled - grandTotalPaid
 
+
+  const handlePrint = async () => {
+    if (!report) return
+    setPrinting(true)
+    try {
+      const { byClass = [], byMethod = [], byFeeItem = [] } = report
+      const sym = fmt(0).replace('0.00','').trim() || '₦'
+      const fmtN = n => sym + Number(n||0).toLocaleString('en-NG', {minimumFractionDigits:2})
+      const classRows = byClass.map(r => `<tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:6px 10px">${r.class_name}</td>
+        <td style="text-align:right;padding:6px 10px">${fmtN(r.total_billed)}</td>
+        <td style="text-align:right;padding:6px 10px;color:#059669">${fmtN(r.total_paid)}</td>
+        <td style="text-align:right;padding:6px 10px;color:${Number(r.balance)>0?'#dc2626':'#059669'}">${fmtN(r.balance)}</td>
+      </tr>`).join('')
+      const methodRows = byMethod.map(r => `<tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:6px 10px;text-transform:uppercase;font-weight:600">${r.payment_method}</td>
+        <td style="text-align:center;padding:6px 10px">${r.n}</td>
+        <td style="text-align:right;padding:6px 10px;color:#059669;font-weight:bold">${fmtN(r.total)}</td>
+      </tr>`).join('')
+      const html = `<div style="font-family:Arial,sans-serif;max-width:750px;margin:0 auto;padding:20px">
+        <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:20px">
+          <h1 style="font-size:16pt;font-weight:bold;text-transform:uppercase;margin:0">Account Report</h1>
+          <p style="margin:4px 0 0;font-size:11pt">${report.term?.session_name||''} — ${report.term?.name||''}</p>
+        </div>
+        <h2 style="font-size:11pt;font-weight:bold;margin:0 0 8px">By Class</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:20px">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 10px">Class</th>
+            <th style="text-align:right;padding:7px 10px">Billed</th>
+            <th style="text-align:right;padding:7px 10px">Paid</th>
+            <th style="text-align:right;padding:7px 10px">Balance</th>
+          </tr></thead>
+          <tbody>${classRows}</tbody>
+          <tfoot><tr style="background:#f9fafb;font-weight:bold;border-top:2px solid #d1d5db">
+            <td style="padding:6px 10px">TOTAL</td>
+            <td style="text-align:right;padding:6px 10px">${fmtN(grandTotalBilled)}</td>
+            <td style="text-align:right;padding:6px 10px;color:#059669">${fmtN(grandTotalPaid)}</td>
+            <td style="text-align:right;padding:6px 10px;color:${grandTotalBalance>0?'#dc2626':'#059669'}">${fmtN(grandTotalBalance)}</td>
+          </tr></tfoot>
+        </table>
+        <h2 style="font-size:11pt;font-weight:bold;margin:0 0 8px">By Payment Method</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:10pt">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 10px">Method</th>
+            <th style="text-align:center;padding:7px 10px">Transactions</th>
+            <th style="text-align:right;padding:7px 10px">Total</th>
+          </tr></thead>
+          <tbody>${methodRows}</tbody>
+        </table>
+      </div>`
+      await printCleanHtml(html)
+    } catch(e) { toast.error('Print failed: ' + e.message) }
+    finally { setPrinting(false) }
+  }
+
   return (
     <div>
       <PageHeader
@@ -113,9 +169,12 @@ export default function AccountReportPage() {
         subtitle="Financial summary by fee item, class, and payment method."
         actions={
           report && (
-            <button className="btn-secondary btn btn-sm" onClick={exportReport}>
-              <Download size={14} /> Export Excel
-            </button>
+            <div className="flex gap-2">
+              <button className="btn-secondary btn btn-sm" onClick={exportReport}><Download size={14} /> Export</button>
+              <button className="btn-secondary btn btn-sm" onClick={handlePrint} disabled={printing}>
+                {printing ? <Loader size={14} className="animate-spin"/> : <Printer size={14}/>} Print
+              </button>
+            </div>
           )
         }
       />

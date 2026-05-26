@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Shield, Download } from 'lucide-react'
+import { Shield, Download, Printer, Loader } from 'lucide-react'
 import { PageHeader, Spinner, SearchInput, exportToExcel } from '../../components/ui'
+import { printCleanHtml, fmtDate } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
 import { fmtDate } from '../../lib/utils'
 
@@ -14,6 +15,7 @@ export default function PaymentAuditPage() {
   const [rows,      setRows]      = useState([])
   const [loading,   setLoading]   = useState(false)
   const [search,    setSearch]    = useState('')
+  const [printing,  setPrinting]  = useState(false)
   const [showRev,   setShowRev]   = useState(true)
 
   useEffect(() => {
@@ -67,6 +69,48 @@ export default function PaymentAuditPage() {
 
   const totValid   = filtered.filter(r => !r.is_reversed && r.amount_paid > 0).reduce((s,r) => s + r.amount_paid, 0)
   const totReversed = filtered.filter(r => r.is_reversed).length
+
+
+  const handlePrint = async () => {
+    if (!rows.length) return
+    setPrinting(true)
+    try {
+      const fmtN = n => '₦' + Number(n||0).toLocaleString('en-NG',{minimumFractionDigits:2})
+      const termName = terms.find(t => String(t.id)===String(selTerm))?.name || ''
+      const tableRows = filtered.map(r => `<tr style="border-bottom:1px solid #e5e7eb;${r.is_reversed?'text-decoration:line-through;color:#9ca3af':''}">
+        <td style="padding:5px 8px;font-size:9pt">${r.receipt_number}</td>
+        <td style="padding:5px 8px">${r.last_name}, ${r.first_name}</td>
+        <td style="padding:5px 8px;font-size:9pt;color:#6b7280">${r.class_name||'—'}</td>
+        <td style="padding:5px 8px;font-size:9pt">${r.payment_date}</td>
+        <td style="text-align:right;padding:5px 8px;font-weight:bold">${fmtN(r.amount_paid)}</td>
+        <td style="text-align:center;padding:5px 8px;text-transform:uppercase;font-size:9pt">${r.payment_method}</td>
+        <td style="text-align:center;padding:5px 8px;font-size:9pt">${r.posted_by}</td>
+        <td style="text-align:center;padding:5px 8px;font-size:9pt;color:${r.is_reversed?'#dc2626':'#059669'}">${r.is_reversed?'REVERSED':'OK'}</td>
+      </tr>`).join('')
+      const html = `<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px">
+        <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:20px">
+          <h1 style="font-size:16pt;font-weight:bold;text-transform:uppercase;margin:0">Payment Audit Trail</h1>
+          <p style="margin:4px 0 0;font-size:11pt">${termName}</p>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:9.5pt">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 8px">Receipt</th>
+            <th style="text-align:left;padding:7px 8px">Student</th>
+            <th style="text-align:left;padding:7px 8px">Class</th>
+            <th style="text-align:left;padding:7px 8px">Date</th>
+            <th style="text-align:right;padding:7px 8px">Amount</th>
+            <th style="text-align:center;padding:7px 8px">Method</th>
+            <th style="text-align:center;padding:7px 8px">Posted By</th>
+            <th style="text-align:center;padding:7px 8px">Status</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <p style="margin-top:10px;font-size:9pt;color:#6b7280">${filtered.length} record(s) · Total: ${fmtN(filtered.filter(r=>!r.is_reversed).reduce((s,r)=>s+Number(r.amount_paid),0))}</p>
+      </div>`
+      await printCleanHtml(html)
+    } catch(e) { toast.error('Print failed: ' + e.message) }
+    finally { setPrinting(false) }
+  }
 
   return (
     <div>

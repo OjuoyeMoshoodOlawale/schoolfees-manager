@@ -21,6 +21,7 @@ module.exports = function registerSettingsHandlers(dbDir) {
       'thermal_width','print_copies',
       'reg_number_format','reg_number_prefix','reg_seq_reset',
       'auto_send_receipt',
+      'auto_send_email_receipt',
     ]
     const sets  = fields.map(f => `${f}=?`).join(',')
     const vals  = fields.map(f => data[f] !== undefined ? data[f] : null)

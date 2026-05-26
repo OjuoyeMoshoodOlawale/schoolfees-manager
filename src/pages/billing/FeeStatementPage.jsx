@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Spinner } from '../../components/ui'
-import { fmtDate } from '../../lib/utils'
+import { fmtDate, printCleanHtml, buildBillSlipHtml } from '../../lib/utils'
 import { ArrowLeft, Printer } from 'lucide-react'
 
 export default function FeeStatementPage() {
@@ -30,8 +30,16 @@ export default function FeeStatementPage() {
 
   useEffect(() => { load() }, [load])
 
-  const handlePrint = () => {
-    window.print()
+  const handlePrint = async () => {
+    const html = buildBillSlipHtml({
+      student, bills, adjustments, bill_total, prev_balance,
+      total_expected, total_paid, balance, school,
+      sessionName: student.session_name || '',
+      termName:    student.term_name    || '',
+      className:   student.class_name   || '',
+      currency:    sym,
+    })
+    await printCleanHtml(html)
   }
 
   if (loading) return <Spinner />

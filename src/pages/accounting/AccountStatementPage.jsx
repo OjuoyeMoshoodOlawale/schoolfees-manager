@@ -3,7 +3,7 @@ import { toast } from 'react-toastify'
 import { BookMarked, Download, Printer } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
-import { fmtDate, todayISO } from '../../lib/utils'
+import { fmtDate, todayISO, printCleanHtml } from '../../lib/utils'
 
 export default function AccountStatementPage() {
   const { fmt }   = useAuth()
@@ -45,7 +45,38 @@ export default function AccountStatementPage() {
     toast.success('Exported')
   }
 
-  const handlePrint = () => window.print()
+  const handlePrint = async () => {
+    if (!entries.length) return
+    const accountName = accounts.find(a => String(a.id) === String(selAccount))?.name || ''
+    const fmtN = n => (auth.fmt ? auth.fmt(n) : '₦' + Number(n||0).toLocaleString('en-NG',{minimumFractionDigits:2}))
+    const tableRows = entries.map(e => `<tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:5px 10px;font-size:9pt">${fmtDate(e.entry_date)}</td>
+      <td style="padding:5px 10px">${e.reference}</td>
+      <td style="padding:5px 10px">${e.description}</td>
+      <td style="text-align:right;padding:5px 10px;color:#059669">${e.debit>0 ? fmtN(e.debit) : ''}</td>
+      <td style="text-align:right;padding:5px 10px;color:#dc2626">${e.credit>0 ? fmtN(e.credit) : ''}</td>
+      <td style="text-align:right;padding:5px 10px;font-weight:bold">${fmtN(e.running_balance)}</td>
+    </tr>`).join('')
+    const html = `<div style="font-family:Arial,sans-serif;max-width:750px;margin:0 auto;padding:20px">
+      <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:20px">
+        <h1 style="font-size:16pt;font-weight:bold;text-transform:uppercase;margin:0">Account Statement</h1>
+        <p style="margin:4px 0 0;font-size:11pt">${accountName}</p>
+        <p style="margin:2px 0 0;font-size:10pt;color:#6b7280">${dateFrom} to ${dateTo}</p>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:10pt">
+        <thead><tr style="background:#1e293b;color:white">
+          <th style="text-align:left;padding:7px 10px">Date</th>
+          <th style="text-align:left;padding:7px 10px">Ref</th>
+          <th style="text-align:left;padding:7px 10px">Description</th>
+          <th style="text-align:right;padding:7px 10px">Debit</th>
+          <th style="text-align:right;padding:7px 10px">Credit</th>
+          <th style="text-align:right;padding:7px 10px">Balance</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`
+    await printCleanHtml(html)
+  }
 
   return (
     <div className="max-w-3xl">

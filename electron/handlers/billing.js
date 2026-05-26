@@ -144,6 +144,13 @@ ipcMain.handle('bills:student-summary', (_, { student_id, term_id }) => {
     WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid > 0
   `).get([student_id, tid])?.total || 0
 
+  // Add term/session/class to student object for print
+  const termRow = db.prepare(
+    'SELECT t.name as term_name, s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?'
+  ).get([tid])
+  student.term_name    = termRow?.term_name    || ''
+  student.session_name = termRow?.session_name || ''
+
   return {
     student, bills, adjustments,
     bill_total: billTotal,

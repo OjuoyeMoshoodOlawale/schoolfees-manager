@@ -182,11 +182,25 @@ ipcMain.handle('gdrive:backup', async () => {
   const oauth2 = makeOAuth2Client(cfg)
   oauth2.setCredentials(token)
 
-  // Auto-refresh token
+  // Auto-refresh: persist new tokens whenever googleapis refreshes
   oauth2.on('tokens', (newTokens) => {
     const merged = { ...loadToken(), ...newTokens }
     saveToken(merged)
+    oauth2.setCredentials(merged)
   })
+
+  // Force a token refresh if the access_token is missing or expired
+  if (!token.access_token || (token.expiry_date && token.expiry_date < Date.now() + 60_000)) {
+    try {
+      const { credentials } = await oauth2.refreshAccessToken()
+      const merged = { ...loadToken(), ...credentials }
+      saveToken(merged)
+      oauth2.setCredentials(merged)
+    } catch(refreshErr) {
+      console.warn('[gdrive] Token refresh failed:', refreshErr.message)
+      // Continue anyway — googleapis may still work with refresh_token
+    }
+  }
 
   try {
     const drive    = google.drive({ version: 'v3', auth: oauth2 })

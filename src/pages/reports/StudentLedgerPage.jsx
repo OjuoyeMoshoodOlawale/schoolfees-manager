@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { Search, BookOpen, ChevronDown, ChevronRight } from 'lucide-react'
+import { Search, BookOpen, ChevronDown, ChevronRight, Printer, Loader } from 'lucide-react'
 import { PageHeader, Spinner } from '../../components/ui'
+import { printCleanHtml } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
 import { fmtDate } from '../../lib/utils'
 
@@ -15,6 +16,7 @@ export default function StudentLedgerPage() {
   const [ledger,    setLedger]    = useState(null)
   const [loading,   setLoading]   = useState(false)
   const [expanded,  setExpanded]  = useState({})
+  const [printing,  setPrinting]  = useState(false)
 
   useEffect(() => {
     window.api.listStudents({}).then(setStudents)
@@ -41,7 +43,13 @@ export default function StudentLedgerPage() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       {/* Student picker */}
       <div className="lg:col-span-1">
-        <PageHeader title="Student Ledger" subtitle="Full payment history across all terms" />
+        <PageHeader title="Student Ledger" subtitle="Full payment history across all terms"
+        actions={ledger && (
+          <button className="btn-secondary btn btn-sm" onClick={handlePrint} disabled={printing}>
+            {printing ? <Loader size={14} className="animate-spin"/> : <Printer size={14}/>} Print
+          </button>
+        )}
+      />
         <div className="card p-0 overflow-hidden">
           <div className="p-3 border-b">
             <div className="relative">

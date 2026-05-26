@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { TrendingUp, Download } from 'lucide-react'
+import { TrendingUp, Download, Printer, Loader } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
+import { printCleanHtml } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
 
 const fmtDay = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' }) : '—'
@@ -12,6 +13,7 @@ export default function CollectionSummaryPage() {
   const [data,    setData]    = useState(null)
   const [days,    setDays]    = useState(30)
   const [loading, setLoading] = useState(true)
+  const [printing, setPrinting] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -32,6 +34,56 @@ export default function CollectionSummaryPage() {
     )
     await exportToExcel(rows, 'collection_summary')
     toast.success('Exported')
+  }
+
+
+  const handlePrint = async () => {
+    if (!data) return
+    setPrinting(true)
+    try {
+      const sym = '₦'
+      const fmtN = n => sym + Number(n||0).toLocaleString('en-NG', {minimumFractionDigits:2})
+      const dayRows = (data.dailyTrend||[]).map(d => `<tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:5px 10px">${d.date}</td>
+        <td style="text-align:center;padding:5px 10px">${d.count}</td>
+        <td style="text-align:right;padding:5px 10px;font-weight:bold">${fmtN(d.total)}</td>
+      </tr>`).join('')
+      const methodRows = (data.methodBreakdown||[]).map(m => `<tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:5px 10px;text-transform:uppercase;font-weight:600">${m.payment_method}</td>
+        <td style="text-align:center;padding:5px 10px">${m.n}</td>
+        <td style="text-align:right;padding:5px 10px;font-weight:bold">${fmtN(m.total)}</td>
+      </tr>`).join('')
+      const html = `<div style="font-family:Arial,sans-serif;max-width:750px;margin:0 auto;padding:20px">
+        <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:20px">
+          <h1 style="font-size:16pt;font-weight:bold;text-transform:uppercase;margin:0">Collection Summary</h1>
+          <p style="margin:4px 0 0;font-size:11pt">Last ${days} days</p>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+          ${[['Total Collected',fmtN(data.totalCollected||0)],['Transactions',data.transactionCount||0],['Daily Average',fmtN(data.dailyAverage||0)]]
+            .map(([l,v])=>`<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px;text-align:center">
+              <p style="font-size:9pt;color:#6b7280;margin:0">${l}</p>
+              <p style="font-size:13pt;font-weight:bold;margin:3px 0 0">${v}</p></div>`).join('')}
+        </div>
+        <h2 style="font-size:11pt;font-weight:bold;margin:0 0 8px">By Payment Method</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:20px">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 10px">Method</th>
+            <th style="text-align:center;padding:7px 10px">Transactions</th>
+            <th style="text-align:right;padding:7px 10px">Total</th>
+          </tr></thead><tbody>${methodRows}</tbody>
+        </table>
+        <h2 style="font-size:11pt;font-weight:bold;margin:0 0 8px">Daily Trend</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:10pt">
+          <thead><tr style="background:#1e293b;color:white">
+            <th style="text-align:left;padding:7px 10px">Date</th>
+            <th style="text-align:center;padding:7px 10px">Transactions</th>
+            <th style="text-align:right;padding:7px 10px">Total</th>
+          </tr></thead><tbody>${dayRows}</tbody>
+        </table>
+      </div>`
+      await printCleanHtml(html)
+    } catch(e) { toast.error('Print failed: ' + e.message) }
+    finally { setPrinting(false) }
   }
 
   return (
