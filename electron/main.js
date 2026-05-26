@@ -104,8 +104,8 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
     let filePath = decodeURIComponent(match[1])
     // Remove leading slash before Windows drive letter: /C:/path → C:/path
     if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
-    // Normalise backslashes (Windows)
-    filePath = filePath.replace(/\//g, path.sep)
+    // Use path.normalize to get the correct OS path separator
+    filePath = path.normalize(filePath)
     try {
       if (fs.existsSync(filePath)) {
         const ext  = path.extname(filePath).toLowerCase().replace('.', '') || 'png'
@@ -149,14 +149,15 @@ let win
 function createWindow() {
   // Register safe local-file protocol: localfile:///path → serves file from disk
   protocol.handle('localfile', (request) => {
-    // Strip scheme — handles localfile://C:/path and localfile:///C:/path
-    let filePath = decodeURIComponent(request.url.replace('localfile://', ''))
+    const { pathToFileURL } = require('url')
+    // Strip scheme — Electron percent-encodes the URL so decode first
+    let raw = decodeURIComponent(request.url.replace(/^localfile:\/\//, ''))
     // Remove leading slash before Windows drive letter: /C:/path → C:/path
-    if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
-    // Normalise backslashes (Windows)
-    filePath = filePath.replace(/\\/g, '/')
-    // Encode each path segment so spaces and special chars don't break the URL
-    const fileUrl = 'file:///' + filePath.split('/').map(seg => encodeURIComponent(seg)).join('/')
+    if (/^\/[A-Za-z]:/.test(raw)) raw = raw.slice(1)
+    // Normalise backslashes → forward slashes
+    raw = raw.replace(/\\/g, '/')
+    // Use pathToFileURL which handles spaces and special chars correctly
+    const fileUrl = pathToFileURL(raw).href
     return net.fetch(fileUrl)
   })
 

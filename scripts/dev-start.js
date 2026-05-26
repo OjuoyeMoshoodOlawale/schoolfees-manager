@@ -77,11 +77,19 @@ if (fs.existsSync(dbDir)) {
       }
       if (deleted) { ok(`Removed: database/${file}`); cleared++ }
       else {
-        // Truncate instead — SQLite treats 0-byte lock file as unlocked
+        // Check if it became a directory (Windows edge case)
         try {
-          fs.writeFileSync(filePath, Buffer.alloc(0))
-          ok(`Cleared (truncated): database/${file}`)
-          cleared++
+          const stat = fs.statSync(filePath)
+          if (stat.isDirectory()) {
+            fs.rmSync(filePath, { recursive: true, force: true })
+            ok(`Removed lock directory: database/${file}`)
+            cleared++
+          } else {
+            // Truncate to 0 bytes — SQLite treats 0-byte file as unlocked
+            fs.writeFileSync(filePath, Buffer.alloc(0))
+            ok(`Cleared (truncated): database/${file}`)
+            cleared++
+          }
         } catch (e) {
           warn(`Could not clear database/${file}: ${e.message}`)
         }

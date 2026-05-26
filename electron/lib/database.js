@@ -98,9 +98,18 @@ function getDb() {
         }
       }
       if (!deleted && fs.existsSync(lf)) {
-        // Truncate to 0 bytes instead of deleting — tricks SQLite into thinking it's fresh
-        try { fs.writeFileSync(lf, Buffer.alloc(0)); console.log('[DB] Cleared (truncated) lock file:', path.basename(lf)) }
-        catch (te) { console.warn('[DB] Could not clear lock file:', path.basename(lf), te.message) }
+        // Check if it's a directory (can happen when SQLite gets confused on Windows)
+        const stat = fs.statSync(lf)
+        if (stat.isDirectory()) {
+          try {
+            fs.rmSync(lf, { recursive: true, force: true })
+            console.log('[DB] Removed lock directory:', path.basename(lf))
+          } catch (de) { console.warn('[DB] Could not remove lock directory:', path.basename(lf), de.message) }
+        } else {
+          // Truncate to 0 bytes instead of deleting — tricks SQLite into thinking it's fresh
+          try { fs.writeFileSync(lf, Buffer.alloc(0)); console.log('[DB] Cleared (truncated) lock file:', path.basename(lf)) }
+          catch (te) { console.warn('[DB] Could not clear lock file:', path.basename(lf), te.message) }
+        }
       }
     }
 
@@ -719,41 +728,27 @@ function migrateSchema() {
     try { db.exec(sql) } catch {} // ignore if column already exists
   }
 
-  // Drop orphaned student_bills_new table left by the frozen-status migration
+  // Widen student_bills.status CHECK to include 'frozen'.
+  // Handles orphaned _new tables from previous failed migration attempts.
   try {
-    const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='student_bills_new'").get()
-    if (exists) {
-      db.exec('DROP TABLE student_bills_new')
-      console.log('[DB] Dropped orphaned student_bills_new table')
-    }
-  } catch(e) { console.warn('[DB] Could not drop student_bills_new:', e.message) }
-
-  // Widen student_bills.status CHECK to include 'frozen' (inactive student bills).
-  // SQLite can't ALTER CHECK constraints, so we rebuild the table if it still has the old constraint.
-  try {
+    const orphan = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='student_bills_new'").get()
+    if (orphan) { db.exec('DROP TABLE student_bills_new'); console.log('[DB] Dropped orphaned student_bills_new') }
     const tblSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='student_bills'").get()?.sql || ''
     if (tblSql.includes("IN ('pending','waived')") && !tblSql.includes("'frozen'")) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS student_bills_new (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          student_id      INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-          term_id         INTEGER NOT NULL REFERENCES terms(id),
-          bill_config_id  INTEGER NOT NULL REFERENCES bill_config(id),
-          amount          REAL NOT NULL,
-          is_compulsory   INTEGER DEFAULT 1,
-          status          TEXT NOT NULL DEFAULT 'pending',
-          created_at      TEXT DEFAULT (datetime('now')),
-          UNIQUE(student_id, term_id, bill_config_id)
-        );
-        INSERT INTO student_bills_new SELECT * FROM student_bills;
-        DROP TABLE student_bills;
-        ALTER TABLE student_bills_new RENAME TO student_bills;
-      `)
-      console.log('[DB] Migrated student_bills: widened status CHECK to include frozen')
+      db.exec(`CREATE TABLE student_bills_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        term_id INTEGER NOT NULL REFERENCES terms(id),
+        bill_config_id INTEGER NOT NULL REFERENCES bill_config(id),
+        amount REAL NOT NULL, is_compulsory INTEGER DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(student_id, term_id, bill_config_id)
+      ); INSERT OR IGNORE INTO student_bills_new SELECT * FROM student_bills;
+      DROP TABLE student_bills; ALTER TABLE student_bills_new RENAME TO student_bills;`)
+      console.log('[DB] Migrated student_bills: status CHECK widened to include frozen')
     }
-  } catch(e) {
-    console.warn('[DB] student_bills migration skipped:', e.message)
-  }
+  } catch(e) { console.warn('[DB] student_bills migration skipped:', e.message) }
 }
 
 function seedDefaults() {
