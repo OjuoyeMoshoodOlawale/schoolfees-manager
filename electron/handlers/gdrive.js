@@ -8,7 +8,7 @@ const { getDbPath } = require('../lib/database')
 
 const SCOPES        = ['https://www.googleapis.com/auth/drive.file']
 const REDIRECT_PORT = 42813
-const REDIRECT_URI  = `http://localhost:${REDIRECT_PORT}`
+const REDIRECT_URI  = `http://127.0.0.1:${REDIRECT_PORT}`
 
 // ── Credential storage ────────────────────────────────────────────────────────
 function getCredentialDir() {
@@ -133,10 +133,17 @@ ipcMain.handle('gdrive:connect', async () => {
           <p>${body}</p><p>You can close this tab.</p></body></html>`)
       }
 
+      // Log full redirect for debugging
+      console.log('[gdrive:connect] redirect received:', req.url)
+      console.log('[gdrive:connect] error param:', error, '| code present:', !!code)
+
       if (error || !code) {
-        sendPage(false, 'Connection failed', error || 'No authorisation code returned.')
+        const errMsg = error === 'access_denied'
+          ? 'Access was denied. Make sure you are signed in with a Google account and approved the permissions.'
+          : error || 'No authorisation code returned from Google.'
+        sendPage(false, 'Connection failed', errMsg)
         server.close()
-        return resolve({ ok: false, error: error || 'No code returned from Google.' })
+        return resolve({ ok: false, error: errMsg })
       }
 
       try {
@@ -177,7 +184,8 @@ ipcMain.handle('gdrive:connect', async () => {
       }
     })
 
-    server.listen(REDIRECT_PORT, () => shell.openExternal(authUrl))
+    console.log('[gdrive:connect] authUrl redirect_uri param:', new URL(authUrl).searchParams.get('redirect_uri'))
+    server.listen(REDIRECT_PORT, '127.0.0.1', () => shell.openExternal(authUrl))
     server.on('error', (e) => resolve({ ok: false, error: `Could not start local server: ${e.message}` }))
     setTimeout(() => { server.close(); resolve({ ok: false, error: 'Authentication timed out.' }) }, 3 * 60 * 1000)
   })
