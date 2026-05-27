@@ -286,7 +286,13 @@ export default function SettingsPage() {
             <Field label="Enable SMS Notifications">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('sms_enabled')} />
-                <span className="text-sm text-gray-700">Send SMS on payment receipt</span>
+                <span className="text-sm text-gray-700">Allow SMS sending (must be on for any SMS to go out)</span>
+              </label>
+            </Field>
+            <Field label="Auto-send SMS Receipt on Payment">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_send_receipt')} />
+                <span className="text-sm text-gray-700">Automatically text receipt to parent when a payment is posted</span>
               </label>
             </Field>
             <Field label="SMS Provider">
@@ -336,7 +342,6 @@ export default function SettingsPage() {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_send_email_receipt')} />
                 <span className="text-sm text-gray-700">Automatically email receipt to parent when a payment is posted</span>
-                <span className="text-xs text-gray-400 ml-1">(SMS receipts are sent from the SMS module)</span>
               </label>
             </Field>
             <div className="grid grid-cols-2 gap-4">

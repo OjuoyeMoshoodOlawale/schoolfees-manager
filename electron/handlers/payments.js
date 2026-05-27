@@ -81,17 +81,16 @@ safeHandle('payments:post', (_, data) => {
     throw e
   }
 
-  // ── Auto-send email receipt (email only — SMS handled in the SMS module) ─────
-  // Fires asynchronously — never blocks the payment response
-  // Controlled by settings.auto_send_email_receipt (separate from SMS)
+  // ── Auto-send receipt (SMS + Email) ─────────────────────────────────────────
+  // Fires asynchronously — never blocks the payment response. Both channels are
+  // independent: SMS controlled by auto_send_receipt + sms_enabled, Email by
+  // auto_send_email_receipt + email_enabled. Skip reasons are logged so the
+  // bursar can see why a receipt didn't go (no email, SMS off, etc.) in the logs.
   setImmediate(async () => {
     try {
       const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
-      if (!settings?.auto_send_email_receipt) return
-      if (!settings?.email_enabled) return
-
       const student  = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
-      if (!student?.parent_email) return
+      if (!student) return
 
       const termRow  = db.prepare('SELECT t.*, s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?').get([term.id])
       const classRow = db.prepare('SELECT c.name FROM student_status ss JOIN classes c ON c.id=ss.class_id WHERE ss.student_id=? AND ss.term_id=?').get([student_id, term.id])
@@ -99,18 +98,53 @@ safeHandle('payments:post', (_, data) => {
       const totalPaid   = db.prepare('SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid>0').get([student_id, term.id])?.t || 0
       const balance     = Math.max(0, Number(totalBilled) - Number(totalPaid))
 
-      const { sendEmail, buildReceiptHtml, logEmail } = require('./communications')
-      const html = buildReceiptHtml({ settings, student, termRow, classRow, balance,
-        receipt_number, amount_paid, payment_date, payment_method, reference })
       const schoolName = settings.school_name || 'SchoolFees Manager'
-      const result = await sendEmail(settings, {
-        to: student.parent_email,
-        subject: `Payment Receipt ${receipt_number} — ${schoolName}`,
-        html, logoPath: settings.logo_path || null,
-      })
-      logEmail(db, { email: student.parent_email, student_id, subject: `Receipt ${receipt_number}`, body: html, result })
+      const currency   = settings.currency_symbol || '₦'
+      const fmtAmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+
+      // ── SMS receipt ─────────────────────────────────────────────────────────
+      if (settings?.auto_send_receipt) {
+        const { sendSms, logSms } = require('./communications')
+        if (!settings.sms_enabled) {
+          logSms(db, { phone: student.parent_phone || '(none)', student_id, message: `Receipt ${receipt_number}`,
+            result: { ok: false, error: 'SMS provider disabled in Settings' } })
+        } else if (!student.parent_phone) {
+          logSms(db, { phone: '(none)', student_id, message: `Receipt ${receipt_number}`,
+            result: { ok: false, error: 'Student has no parent phone number' } })
+        } else {
+          const msg = `${schoolName}: Payment received. Receipt ${receipt_number}. Amount: ${fmtAmt(amt)}. Balance: ${fmtAmt(balance)}. For ${student.first_name} ${student.last_name}${classRow ? ' ('+classRow.name+')' : ''}. Thank you.`
+          const r = await sendSms(settings, student.parent_phone, msg)
+          logSms(db, { phone: student.parent_phone, student_id, message: msg, result: r })
+        }
+      }
+
+      // ── Email receipt ───────────────────────────────────────────────────────
+      if (settings?.auto_send_email_receipt) {
+        const { sendEmail, buildReceiptHtml, logEmail } = require('./communications')
+        if (!settings.email_enabled) {
+          logEmail(db, { email: student.parent_email || '(none)', student_id, subject: `Receipt ${receipt_number}`,
+            body: '', result: { ok: false, error: 'Email sending disabled in Settings' } })
+        } else if (!student.parent_email) {
+          logEmail(db, { email: '(none)', student_id, subject: `Receipt ${receipt_number}`,
+            body: '', result: { ok: false, error: 'Student has no parent email' } })
+        } else {
+          const html = buildReceiptHtml({ settings, student, termRow, classRow, balance,
+            receipt_number, amount_paid: amt, payment_date, payment_method, reference })
+          const result = await sendEmail(settings, {
+            to: student.parent_email,
+            subject: `Payment Receipt ${receipt_number} — ${schoolName}`,
+            html, logoPath: settings.logo_path || null,
+          })
+          logEmail(db, { email: student.parent_email, student_id, subject: `Receipt ${receipt_number}`, body: html, result })
+        }
+      }
     } catch(e) {
-      console.error('[auto-email-receipt] Error:', e.message)
+      console.error('[auto-receipt] Error:', e.message)
+      try {
+        const { logError } = require('./errorHandler')
+        logError({ handler: 'auto-receipt', message: e.message, stack: e.stack,
+          context: JSON.stringify({ student_id, receipt_number }), severity: 'warning' })
+      } catch {}
     }
   })
 
