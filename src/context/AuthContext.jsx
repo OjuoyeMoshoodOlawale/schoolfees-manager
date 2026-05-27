@@ -9,6 +9,15 @@ export function AuthProvider({ children }) {
   const [setupDone, setSetupDone]     = useState(false)
   const [loading, setLoading]         = useState(true)      // checking initial state
   const [accounting, setAccounting]   = useState(false)
+  const [currentTerm, setCurrentTerm] = useState(null)      // global current term — single source of truth
+
+  const refreshTerm = useCallback(async () => {
+    try {
+      const t = await window.api.getCurrentTerm()
+      setCurrentTerm(t || null)
+      return t
+    } catch { return null }
+  }, [])
 
   const loadCurrency = useCallback(async () => {
     try {
@@ -52,6 +61,7 @@ export function AuthProvider({ children }) {
       // setup is truly done only when BOTH the flag is set AND at least one admin user exists
       setSetupDone(status.setup_complete && status.has_users)
       await loadCurrency()
+      await refreshTerm()
       const settings = await window.api.getSettings()
       setAccounting(!!settings?.accounting_enabled)
       // payroll/inventory enabled flags are loaded directly in Sidebar from settings
@@ -113,6 +123,7 @@ export function AuthProvider({ children }) {
       currency, fmt, fmtShort, refreshCurrency,
       activation, setupDone, loading,
       accounting, setAccounting,
+      currentTerm, refreshTerm,
       checkStatus, refreshSettings,
       isDeveloper: user?.role === 'developer',
       isAdmin:     user?.role === 'developer' || user?.role === 'admin',

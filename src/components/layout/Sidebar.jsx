@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
 import {
   LayoutDashboard, Users, UserPlus, ArrowUpCircle, Calendar,
   BookOpen, Settings, CloudUpload, ListChecks, SlidersHorizontal,
@@ -8,6 +9,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
   Briefcase, UserCog, Play, Minus,
+  LogOut, User,
   ShoppingBag, Tag, Truck, PieChart,
   Package, Archive
 } from 'lucide-react'
@@ -152,8 +154,8 @@ function NavGroup({ section, items, accounting, accountingEnabled, payroll, payr
 }
 
 export default function Sidebar() {
+  const { currentTerm, user, logout } = useAuth()
   const [school, setSchool]           = useState('SchoolFees Manager')
-  const [currentTerm, setCurrentTerm] = useState(null)
   const [logoPath, setLogoPath]       = useState('')
   const [accounting, setAccounting]   = useState(false)
   const [payrollOn,  setPayrollOn]    = useState(false)
@@ -172,7 +174,6 @@ export default function Sidebar() {
       if (s?.payroll_enabled)    setPayrollOn(!!s.payroll_enabled)
       if (s?.inventory_enabled)  setInventoryOn(!!s.inventory_enabled)
     })
-    window.api?.getCurrentTerm().then(t => setCurrentTerm(t))
     // Load error count and refresh every 60 seconds
     loadErrorCount()
     const interval = setInterval(loadErrorCount, 60_000)
@@ -233,6 +234,28 @@ export default function Sidebar() {
       <div className="px-2 py-3 border-t border-slate-800 flex-shrink-0 space-y-0.5">
         <NavItem to="/backup"   icon={CloudUpload} label="Backup & Restore" />
         <NavItem to="/settings" icon={Settings}    label="Settings" />
+
+        {/* User info + logout */}
+        {user && (
+          <div className="mt-2 pt-2 border-t border-slate-800">
+            <div className="flex items-center gap-2 px-3 py-2 text-slate-300">
+              <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <User size={14} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{user.full_name || user.username}</p>
+                <p className="text-xs text-slate-500 capitalize truncate">{user.role}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { if (confirm('Log out of SchoolFees Manager?')) logout() }}
+              className="nav-item w-full text-left text-red-300 hover:bg-red-900/30 hover:text-red-200"
+            >
+              <LogOut size={14} className="flex-shrink-0" />
+              <span className="flex-1">Log Out</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   )

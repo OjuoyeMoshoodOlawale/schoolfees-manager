@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { Plus, Trash2, Check, ChevronDown, ChevronRight, Calendar, AlertCircle } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, StatusBadge } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
 
 const TERM_ORDER = ['First Term', 'Second Term', 'Third Term']
 
@@ -146,6 +147,7 @@ function SessionCard({ session, currentTermId, onSetCurrent, onDelete, onRefresh
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function SessionsPage() {
+  const { refreshTerm } = useAuth()
   const [sessions, setSessions]       = useState([])
   const [currentTermId, setCurrentTermId] = useState(null)
   const [loading, setLoading]         = useState(true)
@@ -162,6 +164,8 @@ export default function SessionsPage() {
     setSessions(sess)
     setCurrentTermId(term?.id || null)
     setLoading(false)
+    // Update the global current term so the sidebar and all pages refresh
+    refreshTerm()
   }
 
   useEffect(() => { load() }, [])

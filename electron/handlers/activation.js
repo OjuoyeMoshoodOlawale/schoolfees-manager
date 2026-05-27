@@ -6,8 +6,9 @@ module.exports = function register_activationHandlers() {
 ipcMain.handle('activation:status', () => {
   const isDev = process.env.NODE_ENV === 'development' || !require('electron').app.isPackaged
 
-  // DEV MODE: auto-activate with unlimited students so you can test without a key
-  if (isDev) {
+  // DEV MODE: auto-activate ONLY if SF_AUTO_ACTIVATE is set, so the real
+  // activation → setup → login flow can be tested in dev by leaving it unset.
+  if (isDev && process.env.SF_AUTO_ACTIVATE === '1') {
     const db = getDb()
     const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
     const schoolName = db.prepare('SELECT school_name FROM school_settings WHERE id=1').get()?.school_name || 'Development School'
@@ -21,7 +22,6 @@ ipcMain.handle('activation:status', () => {
         db.prepare('UPDATE activation SET is_active=1, max_students=9999, tier=? WHERE id=1').run(['unlimited'])
       }
     }
-    // Always stamp setup_complete in dev — survives Ctrl+C without DB flush
     db.prepare("INSERT OR REPLACE INTO app_state (key,value) VALUES ('setup_complete','1')").run([])
   }
 
