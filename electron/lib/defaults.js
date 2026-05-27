@@ -38,6 +38,7 @@ module.exports = {
     { code: '1001', name: 'Cash on Hand',        type: 'asset',    group: 'Current Assets' },
     { code: '1002', name: 'Bank Account',         type: 'asset',    group: 'Current Assets' },
     { code: '1003', name: 'Petty Cash',           type: 'asset',    group: 'Current Assets' },
+    { code: '1100', name: 'Accounts Receivable',  type: 'asset',    group: 'Current Assets' },
     { code: '4001', name: 'School Fees Income',   type: 'income',   group: 'Revenue' },
     { code: '4002', name: 'Registration Income',  type: 'income',   group: 'Revenue' },
     { code: '4003', name: 'Other Income',         type: 'income',   group: 'Revenue' },
@@ -48,6 +49,7 @@ module.exports = {
     { code: '5005', name: 'Transportation',       type: 'expense',  group: 'Operating Expenses' },
     { code: '5006', name: 'Miscellaneous',        type: 'expense',  group: 'Operating Expenses' },
     { code: '2001', name: 'Accounts Payable',     type: 'liability',group: 'Current Liabilities' },
+    { code: '2002', name: 'Accrued Expenses',     type: 'liability',group: 'Current Liabilities' },
     { code: '3001', name: 'Retained Earnings',    type: 'equity',   group: 'Equity' },
   ],
 

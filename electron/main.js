@@ -188,6 +188,29 @@ function createWindow() {
   win.once('ready-to-show', () => win.show())
   win.webContents.on('did-finish-load', () => win.setTitle('SchoolFees Manager'))
 
+  // ── Block DevTools / inspection shortcuts in production ───────────────────
+  // Normal users cannot open the console. Support staff use a secret combo:
+  // Ctrl+Shift+Alt+D  (only works in production, opens DevTools for diagnostics)
+  if (app.isPackaged) {
+    win.webContents.on('before-input-event', (event, input) => {
+      const key = (input.key || '').toLowerCase()
+      const blocked =
+        key === 'f12' ||
+        (input.control && input.shift && (key === 'i' || key === 'j' || key === 'c')) ||
+        (input.meta    && input.alt   && (key === 'i' || key === 'j'))   // mac
+      // Secret support combo: Ctrl+Shift+Alt+D → allow DevTools
+      const supportCombo = input.control && input.shift && input.alt && key === 'd'
+      if (supportCombo) {
+        win.webContents.openDevTools({ mode: 'detach' })
+        event.preventDefault()
+        return
+      }
+      if (blocked) event.preventDefault()
+    })
+    // Also prevent right-click → Inspect
+    win.webContents.on('context-menu', (e) => e.preventDefault())
+  }
+
   // ── Security: block navigation away from the app and external window opens ──
   win.webContents.on('will-navigate', (event, navUrl) => {
     const allowed = isDev ? 'http://localhost:5173' : 'file://'

