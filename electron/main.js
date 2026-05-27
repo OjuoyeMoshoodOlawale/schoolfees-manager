@@ -187,6 +187,22 @@ function createWindow() {
   }
   win.once('ready-to-show', () => win.show())
   win.webContents.on('did-finish-load', () => win.setTitle('SchoolFees Manager'))
+
+  // ── Security: block navigation away from the app and external window opens ──
+  win.webContents.on('will-navigate', (event, navUrl) => {
+    const allowed = isDev ? 'http://localhost:5173' : 'file://'
+    if (!navUrl.startsWith(allowed)) {
+      event.preventDefault()
+      console.warn('[security] Blocked navigation to:', navUrl)
+    }
+  })
+  // External links open in the system browser, never in the app window
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url)
+    }
+    return { action: 'deny' }
+  })
 }
 
 // ─── DB lock file cleanup ─────────────────────────────────────────────────────

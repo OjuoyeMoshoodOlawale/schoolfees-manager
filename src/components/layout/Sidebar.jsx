@@ -9,7 +9,7 @@ import {
   TrendingUp, Activity, Hash, MessageCircle,
   Briefcase, UserCog, Play, Minus,
   ShoppingBag, Tag, Truck, PieChart,
-  Package, BarChart2 as BarChartIcon, Archive
+  Package, Archive
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -97,7 +97,7 @@ const NAV_GROUPS = [
     inventory: true,
     items: [
       { to: '/inventory',        icon: Package,       label: 'Stock Catalogue' },
-      { to: '/inventory/report', icon: BarChartIcon,  label: 'Valuation Report' },
+      { to: '/inventory/report', icon: BarChart2,  label: 'Valuation Report' },
     ]
   },
   {

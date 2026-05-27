@@ -19,9 +19,22 @@ ipcMain.handle('payments:next-receipt', () => {
 safeHandle('payments:post', (_, data) => {
   const db = getDb()
   const { student_id, amount_paid, payment_date, payment_method, reference = '', posted_by = 'admin' } = data
+
+  // ── Validation ──────────────────────────────────────────────────────────
+  if (!student_id) throw new Error('No student selected.')
+  const amt = Number(amount_paid)
+  if (isNaN(amt) || amt <= 0) throw new Error('Payment amount must be greater than zero.')
+  if (amt > 100_000_000) throw new Error('Payment amount is unreasonably large. Please check the figure.')
+  if (!payment_date) throw new Error('Payment date is required.')
+
   // Enforce current term only
   const term = db.prepare('SELECT id FROM terms WHERE is_current=1').get()
   if (!term) throw new Error('No current term set. Cannot post payment.')
+
+  // Verify student exists
+  const studentExists = db.prepare('SELECT id FROM students WHERE id=?').get([student_id])
+  if (!studentExists) throw new Error('Student not found.')
+
   const receipt_number = data.receipt_number || (() => {
     const year = new Date().getFullYear()
     const row = db.prepare(`SELECT receipt_number FROM payments WHERE receipt_number LIKE ? ORDER BY id DESC LIMIT 1`).get([`RCP-${year}-%`])
@@ -30,19 +43,22 @@ safeHandle('payments:post', (_, data) => {
     return `RCP-${year}-${String(parseInt(parts[2] || '0') + 1).padStart(4, '0')}`
   })()
 
-  const info = db.prepare(`INSERT INTO payments
-    (student_id, term_id, receipt_number, amount_paid, payment_date, payment_method, reference, posted_by)
-    VALUES (?,?,?,?,?,?,?,?)`)
-    .run([student_id, term.id, receipt_number, amount_paid, payment_date, payment_method, reference, posted_by])
-
-  const paymentId = info.lastInsertRowid
-
-  db.prepare(`INSERT INTO audit_log (action, table_name, record_id, details)
-    VALUES ('PAYMENT_POSTED','payments',?,?)`)
-    .run([paymentId, JSON.stringify({ student_id, amount_paid, receipt_number })])
-
-  // ── Auto-journal entry if accounting is enabled ───────────────────────────
+  // ── Wrap payment + journal in a transaction (all-or-nothing) ──────────────
+  let paymentId
+  db.exec('BEGIN')
   try {
+    const info = db.prepare(`INSERT INTO payments
+      (student_id, term_id, receipt_number, amount_paid, payment_date, payment_method, reference, posted_by)
+      VALUES (?,?,?,?,?,?,?,?)`)
+      .run([student_id, term.id, receipt_number, amt, payment_date, payment_method, reference, posted_by])
+
+    paymentId = info.lastInsertRowid
+
+    db.prepare(`INSERT INTO audit_log (action, table_name, record_id, details)
+      VALUES ('PAYMENT_POSTED','payments',?,?)`)
+      .run([paymentId, JSON.stringify({ student_id, amount_paid: amt, receipt_number })])
+
+    // ── Auto-journal entry if accounting is enabled (inside transaction) ────
     const acctEnabled = db.prepare("SELECT value FROM app_state WHERE key='accounting_enabled'").get()?.value
     if (acctEnabled === '1') {
       const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1010' AND is_active=1").get()
@@ -53,12 +69,17 @@ safeHandle('payments:post', (_, data) => {
           VALUES (?,?,?,'payment',?)`)
           .run([ref, `Payment received: ${receipt_number}`, payment_date, posted_by]).lastInsertRowid
         db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,?,0)')
-          .run([entryId, bankAcc.id, amount_paid])
+          .run([entryId, bankAcc.id, amt])
         db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,0,?)')
-          .run([entryId, feeAcc.id, amount_paid])
+          .run([entryId, feeAcc.id, amt])
       }
     }
-  } catch(e) { /* non-critical — don't fail the payment */ }
+
+    db.exec('COMMIT')
+  } catch(e) {
+    db.exec('ROLLBACK')
+    throw e
+  }
 
   // ── Auto-send email receipt (email only — SMS handled in the SMS module) ─────
   // Fires asynchronously — never blocks the payment response

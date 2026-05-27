@@ -160,8 +160,14 @@ ipcMain.handle('inventory:transact', (_, d) => {
   if (d.type === 'purchase' && price > 0) {
     const oldQty    = item.quantity_on_hand
     const oldCost   = item.cost_price
-    const avgCost   = (oldQty * oldCost + qty * price) / (oldQty + qty)
-    db.prepare('UPDATE inventory_items SET cost_price=? WHERE id=?').run([Math.round(avgCost * 100) / 100, d.item_id])
+    const denom     = oldQty + qty
+    if (denom > 0) {
+      const avgCost = (oldQty * oldCost + qty * price) / denom
+      db.prepare('UPDATE inventory_items SET cost_price=? WHERE id=?').run([Math.round(avgCost * 100) / 100, d.item_id])
+    } else {
+      // No prior stock — just use the purchase price
+      db.prepare('UPDATE inventory_items SET cost_price=? WHERE id=?').run([price, d.item_id])
+    }
   }
 
   return { ok: true, id: txId, new_quantity: newQty }

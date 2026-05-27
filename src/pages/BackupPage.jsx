@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'react-toastify'
 import {
   CloudUpload, HardDrive, FolderSearch, AlertCircle,
-  CheckCircle2, RefreshCw, Database, FolderSearch as FolderIcon,
+  CheckCircle2, RefreshCw, Database,
   Cloud, CloudOff, Wifi, WifiOff, Clock, Trash2, Download,
   RotateCcw, Settings, ChevronDown, ChevronUp, Play, Link, Unlink
 } from 'lucide-react'
@@ -469,7 +469,7 @@ export default function BackupPage() {
               className="btn w-full justify-center py-2.5 bg-purple-600 text-white hover:bg-purple-700 rounded-lg font-medium text-sm flex items-center gap-2"
               onClick={() => setConfirmRestore(true)} disabled={busy}
             >
-              <FolderIcon size={16} /> Load Database File (.db)
+              <FolderSearch size={16} /> Load Database File (.db)
             </button>
           </div>
         </Card>
