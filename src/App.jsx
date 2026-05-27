@@ -5,6 +5,7 @@ import Layout from './components/layout/Layout'
 import { Spinner } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
 import SystemErrorsPage from './pages/settings/SystemErrorsPage'
+import HelpPage from './pages/HelpPage'
 
 // Auth screens
 import ActivationScreen from './pages/auth/ActivationScreen'
@@ -183,6 +184,7 @@ function MainApp() {
           <Route path="/inventory"                 element={<InventoryPage />} />
           <Route path="/inventory/report"           element={<InventoryReportPage />} />
           <Route path="/system-errors"               element={<SystemErrorsPage />} />
+          <Route path="/help"                        element={<HelpPage />} />
         </>}
 
         <Route path="*" element={<Navigate to="/" />} />

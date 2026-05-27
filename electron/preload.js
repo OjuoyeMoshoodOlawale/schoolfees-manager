@@ -207,6 +207,10 @@ contextBridge.exposeInMainWorld('api', {
   errorsClearResolved:  ()   => ipcRenderer.invoke('errors:clear-resolved'),
   errorsCountUnresolved:()   => ipcRenderer.invoke('errors:count-unresolved'),
 
+  // ── User Guides (bundled PDFs)
+  guidesList:           ()   => ipcRenderer.invoke('guides:list'),
+  guidesOpen:           (f)  => ipcRenderer.invoke('guides:open', f),
+
   // ── Backup
   getDbPath:          ()     => ipcRenderer.invoke('backup:get-db-path'),
   backupLocal:        ()     => ipcRenderer.invoke('backup:local'),

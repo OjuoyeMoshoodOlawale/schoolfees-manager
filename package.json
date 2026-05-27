@@ -60,6 +60,11 @@
         "from": "database",
         "to": "database",
         "filter": ["**/*", "!*.lock"]
+      },
+      {
+        "from": "resources/guides",
+        "to": "guides",
+        "filter": ["**/*.pdf"]
       }
     ],
     "asar": true,

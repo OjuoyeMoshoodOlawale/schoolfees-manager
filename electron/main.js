@@ -89,6 +89,48 @@ ipcMain.handle('shell:open-external', (_, url) => shell.openExternal(url))
 ipcMain.handle('app:version', () => app.getVersion())
 ipcMain.handle('app:get-db-dir', () => dbDir)
 
+// ─── User Guides (bundled PDFs) ─────────────────────────────────────────────
+function getGuidesDir() {
+  return isDev
+    ? path.join(__dirname, '..', 'resources', 'guides')
+    : path.join(process.resourcesPath, 'guides')
+}
+
+ipcMain.handle('guides:list', () => {
+  try {
+    const dir = getGuidesDir()
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir)
+      .filter(f => f.toLowerCase().endsWith('.pdf'))
+      .sort()
+      .map(filename => {
+        // "01-Students-User-Guide.pdf" → { title: "Students", filename, sizeKb }
+        const base = filename.replace(/\.pdf$/i, '')
+        const titlePart = base.replace(/^\d+\s*-\s*/, '').replace(/-User-Guide$/i, '')
+        const title = titlePart.replace(/-/g, ' ').replace(/\band\b/g, '&')
+        const stat = fs.statSync(path.join(dir, filename))
+        return { filename, title, sizeKb: Math.round(stat.size / 1024) }
+      })
+  } catch (e) {
+    console.warn('[guides] list failed:', e.message)
+    return []
+  }
+})
+
+ipcMain.handle('guides:open', (_, filename) => {
+  try {
+    // Validate filename — must be a simple .pdf name, no path traversal
+    if (typeof filename !== 'string' || !/^[\w\-. &]+\.pdf$/i.test(filename)) {
+      throw new Error('Invalid guide filename')
+    }
+    const fullPath = path.join(getGuidesDir(), filename)
+    if (!fs.existsSync(fullPath)) throw new Error('Guide file not found')
+    return shell.openPath(fullPath)
+  } catch (e) {
+    return e.message || 'Failed to open guide'
+  }
+})
+
 // Toggle OS-level screenshot/screen capture protection for sensitive screens
 ipcMain.handle('app:set-content-protection', (_, enabled) => {
   if (win) win.setContentProtection(!!enabled)

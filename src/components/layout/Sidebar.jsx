@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
   Briefcase, UserCog, Play, Minus,
-  LogOut, User,
+  LogOut, User, HelpCircle,
   ShoppingBag, Tag, Truck, PieChart,
   Package, Archive
 } from 'lucide-react'
@@ -233,6 +233,7 @@ export default function Sidebar() {
       {/* ── Bottom nav ── */}
       <div className="px-2 py-3 border-t border-slate-800 flex-shrink-0 space-y-0.5">
         <NavItem to="/backup"   icon={CloudUpload} label="Backup & Restore" />
+        <NavItem to="/help"     icon={HelpCircle}  label="Help & Guides" />
         <NavItem to="/settings" icon={Settings}    label="Settings" />
 
         {/* User info + logout */}
