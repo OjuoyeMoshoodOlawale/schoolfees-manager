@@ -211,6 +211,11 @@ contextBridge.exposeInMainWorld('api', {
   guidesList:           ()   => ipcRenderer.invoke('guides:list'),
   guidesOpen:           (f)  => ipcRenderer.invoke('guides:open', f),
 
+  // ── Bulk Import (from JSON produced by parsing client spreadsheets)
+  importPickFile:       ()   => ipcRenderer.invoke('import:pick-file'),
+  importPreview:        (p)  => ipcRenderer.invoke('import:preview', p),
+  importExecute:        (d)  => ipcRenderer.invoke('import:execute', d),
+
   // ── Backup
   getDbPath:          ()     => ipcRenderer.invoke('backup:get-db-path'),
   backupLocal:        ()     => ipcRenderer.invoke('backup:local'),

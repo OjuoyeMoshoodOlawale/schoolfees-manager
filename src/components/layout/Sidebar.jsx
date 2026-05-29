@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, FileSpreadsheet, Printer,
   TrendingUp, Activity, Hash, MessageCircle,
   Briefcase, UserCog, Play, Minus,
-  LogOut, User, HelpCircle,
+  LogOut, User, HelpCircle, Upload,
   ShoppingBag, Tag, Truck, PieChart,
   Package, Archive
 } from 'lucide-react'
@@ -109,6 +109,7 @@ const NAV_GROUPS = [
       { to: '/classes',  icon: BookOpen, label: 'Classes' },
       { to: '/users',         icon: Shield,        label: 'Users & Access' },
       { to: '/system-errors', icon: AlertTriangle, label: 'System Errors', badge: 'errorCount' },
+      { to: '/import-data',   icon: Upload,        label: 'Import Data' },
     ]
   },
 ]
