@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PrintPreviewModal from './PrintPreviewModal'
 import { X, Search, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
 
 // ─── Modal ──────────────────────────────────────────────────────────────────
@@ -184,3 +185,5 @@ export async function exportToExcel(data, filename = 'export') {
     throw e  // re-throw so callers can catch and reset their loading state
   }
 }
+
+export { PrintPreviewModal }

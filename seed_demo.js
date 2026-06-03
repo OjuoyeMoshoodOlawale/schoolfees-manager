@@ -1,7 +1,8 @@
 const path = require('path')
-const { setDbPath, getDb } = require('./electron/lib/database')
+const { setDbPath, getDb, closeDb } = require('./electron/lib/database')
 
-setDbPath(path.join(__dirname, 'database', 'schoolfees.db'))
+const dbPath = path.join(__dirname, 'database', 'schoolfees.db')
+setDbPath(dbPath)
 const db = getDb()
 
 const crypto = require('crypto')
@@ -11,6 +12,7 @@ function hashPassword(pw) {
 
 console.log('🌱 Seeding demo database...')
 
+try {
 // ── Activation (demo unlimited for dev) ──────────────────────────────────────
 db.prepare(`INSERT OR REPLACE INTO activation
   (id,license_key,school_name,activated_at,max_students,tier,is_active)
@@ -262,3 +264,7 @@ console.log('\n🔑 LOGIN CREDENTIALS:')
 console.log('   Admin:  username=admin    password=admin123')
 console.log('   Bursar: username=bursar   password=bursar123')
 console.log('\n✅ Demo database ready!')
+
+} finally {
+  closeDb()
+}
