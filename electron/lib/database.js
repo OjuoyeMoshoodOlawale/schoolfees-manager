@@ -90,34 +90,46 @@ function getDb() {
     if (!dbPath) throw new Error('DB path not set')
 
     checkSeal(dbPath)
+    // ── Ensure database directory exists ────────────────────────────────────────
+    const dbDir = path.dirname(dbPath)
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true })
+      console.log('[DB] Created database directory:', dbDir)
+    }
+
     // ── Delete stale lock files (Windows: retry with delay if EPERM) ────────────
     // journal_mode=DELETE leaves a .lock file; WAL leaves -wal and -shm.
     // On Windows another process may briefly hold the handle — retry for 3 seconds.
-    const lockFiles = [dbPath + '.lock', dbPath + '-journal', dbPath + '-wal', dbPath + '-shm']
+    const lockFiles = [dbPath + '.lock', dbPath + '-journal', dbPath + '-wal', dbPath + '-shm', dbPath + '.seal']
     for (const lf of lockFiles) {
-      if (!fs.existsSync(lf)) continue
-      let deleted = false
-      for (let t = 0; t < 30; t++) {         // up to 3 seconds (30 × 100ms)
-        try { fs.unlinkSync(lf); deleted = true; console.log('[DB] Removed lock file:', path.basename(lf)); break }
-        catch (e) {
-          if (e.code === 'EPERM' || e.code === 'EBUSY') {
-            const end = Date.now() + 100; while (Date.now() < end) {}   // spin-wait 100ms
-          } else { break }
-        }
-      }
-      if (!deleted && fs.existsSync(lf)) {
-        // Check if it's a directory (can happen when SQLite gets confused on Windows)
-        const stat = fs.statSync(lf)
-        if (stat.isDirectory()) {
+      try {
+        if (!fs.existsSync(lf)) continue
+        let deleted = false
+        for (let t = 0; t < 30; t++) {         // up to 3 seconds (30 × 100ms)
           try {
-            fs.rmSync(lf, { recursive: true, force: true })
-            console.log('[DB] Removed lock directory:', path.basename(lf))
-          } catch (de) { console.warn('[DB] Could not remove lock directory:', path.basename(lf), de.message) }
-        } else {
+            const stat = fs.statSync(lf)
+            if (stat.isDirectory()) {
+              fs.rmSync(lf, { recursive: true, force: true })
+            } else {
+              fs.unlinkSync(lf)
+            }
+            deleted = true
+            console.log('[DB] Removed lock path:', path.basename(lf))
+            break
+          }
+          catch (e) {
+            if (e.code === 'EPERM' || e.code === 'EBUSY') {
+              const end = Date.now() + 100; while (Date.now() < end) {}   // spin-wait 100ms
+            } else { break }
+          }
+        }
+        if (!deleted && fs.existsSync(lf)) {
           // Truncate to 0 bytes instead of deleting — tricks SQLite into thinking it's fresh
           try { fs.writeFileSync(lf, Buffer.alloc(0)); console.log('[DB] Cleared (truncated) lock file:', path.basename(lf)) }
           catch (te) { console.warn('[DB] Could not clear lock file:', path.basename(lf), te.message) }
         }
+      } catch (err) {
+        console.warn('[DB] Error handling lock file:', lf, err.message)
       }
     }
 
