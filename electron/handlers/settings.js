@@ -46,8 +46,17 @@ module.exports = function registerSettingsHandlers(dbDir) {
     if (result.canceled) return null
     const src  = result.filePaths[0]
     const ext  = path.extname(src)
-    const dest = path.join(dbDir, `logo${ext}`)
+    // Unique filename each upload so the renderer never serves a stale cached image
+    const dest = path.join(dbDir, `logo_${Date.now()}${ext}`)
     fs.copyFileSync(src, dest)
+    // Clean up older logo files to avoid clutter
+    try {
+      for (const f of fs.readdirSync(dbDir)) {
+        if (/^logo[_.]/.test(f) && path.join(dbDir, f) !== dest) {
+          try { fs.unlinkSync(path.join(dbDir, f)) } catch {}
+        }
+      }
+    } catch {}
     // Always return forward slashes — backslashes break localfile:// URLs on Windows
     return dest.replace(/\\/g, '/')
   })

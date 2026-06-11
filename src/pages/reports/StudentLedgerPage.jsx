@@ -39,6 +39,61 @@ export default function StudentLedgerPage() {
     return `${s.first_name} ${s.last_name} ${s.reg_number}`.toLowerCase().includes(q)
   })
 
+  // Print the full ledger for the selected student
+  const handlePrint = async () => {
+    if (!ledger) return
+    setPrinting(true)
+    try {
+      const sym = fmt(0).replace(/[\d.,]/g, '').trim() || '₦'
+      const fmtN = n => sym + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+      const esc = v => String(v ?? '').replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+
+      const termBlocks = ledger.history.map(term => {
+        const billRows = term.bills.filter(b => b.status !== 'waived').map(b => `
+          <tr><td style="padding:3px 10px;font-size:9pt">${esc(b.fee_item_name)}</td>
+          <td style="padding:3px 10px;font-size:9pt;text-align:right">${fmtN(b.amount)}</td></tr>`).join('')
+        const payRows = term.payments.filter(p => !p.is_reversed && p.amount_paid > 0).map(p => `
+          <tr><td style="padding:3px 10px;font-size:9pt">${esc(p.payment_date)} · ${esc(p.receipt_number)} · ${esc((p.payment_method||'').toUpperCase())}</td>
+          <td style="padding:3px 10px;font-size:9pt;text-align:right;color:#059669">${fmtN(p.amount_paid)}</td></tr>`).join('')
+        return `
+          <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden">
+            <div style="background:#f1f5f9;padding:6px 12px;font-weight:bold;font-size:10pt;display:flex;justify-content:space-between">
+              <span>${esc(term.session_name)} — ${esc(term.term_name)} (${esc(term.class_name||'')})</span>
+              <span style="color:${term.balance > 0 ? '#dc2626' : '#059669'}">${term.balance > 0 ? 'Owes ' + fmtN(term.balance) : 'Fully paid'}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse">
+              <tr><td colspan="2" style="padding:4px 10px;font-size:8pt;font-weight:bold;color:#64748b;text-transform:uppercase">Fee Lines</td></tr>
+              ${billRows || '<tr><td style="padding:3px 10px;font-size:9pt;color:#9ca3af">No bills</td><td></td></tr>'}
+              <tr style="border-top:1px solid #e5e7eb"><td style="padding:4px 10px;font-size:9pt;font-weight:bold">Subtotal Billed</td><td style="padding:4px 10px;font-size:9pt;font-weight:bold;text-align:right">${fmtN(term.billed)}</td></tr>
+              ${payRows ? `<tr><td colspan="2" style="padding:4px 10px;font-size:8pt;font-weight:bold;color:#64748b;text-transform:uppercase">Payments</td></tr>${payRows}` : ''}
+              <tr style="border-top:1px solid #e5e7eb;background:#f8fafc"><td style="padding:4px 10px;font-size:9pt;font-weight:bold">Paid This Term</td><td style="padding:4px 10px;font-size:9pt;font-weight:bold;text-align:right;color:#059669">${fmtN(term.paid)}</td></tr>
+            </table>
+          </div>`
+      }).join('')
+
+      const html = `<div style="font-family:Arial,sans-serif;max-width:720px;margin:0 auto;padding:20px">
+        <div style="text-align:center;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px">
+          <h1 style="font-size:15pt;font-weight:bold;margin:0;text-transform:uppercase">Student Ledger</h1>
+          <p style="margin:6px 0 0;font-size:12pt;font-weight:bold">${esc(ledger.student.last_name)} ${esc(ledger.student.first_name)}</p>
+          <p style="margin:2px 0 0;font-size:10pt;color:#64748b">${esc(ledger.student.reg_number)}</p>
+        </div>
+        <div style="display:flex;justify-content:space-around;margin-bottom:18px;padding:10px;background:#f8fafc;border-radius:6px">
+          <div style="text-align:center"><div style="font-size:8pt;color:#64748b;text-transform:uppercase">Total Billed</div><div style="font-size:12pt;font-weight:bold">${fmtN(ledger.totalBilled)}</div></div>
+          <div style="text-align:center"><div style="font-size:8pt;color:#64748b;text-transform:uppercase">Total Paid</div><div style="font-size:12pt;font-weight:bold;color:#059669">${fmtN(ledger.totalPaid)}</div></div>
+          <div style="text-align:center"><div style="font-size:8pt;color:#64748b;text-transform:uppercase">Terms</div><div style="font-size:12pt;font-weight:bold">${ledger.history.length}</div></div>
+        </div>
+        ${termBlocks}
+        <p style="text-align:center;font-size:8pt;color:#9ca3af;margin-top:20px">Generated ${new Date().toLocaleString('en-NG')}</p>
+      </div>`
+      await printCleanHtml(html)
+    } catch (e) {
+      toast.error('Print failed: ' + e.message)
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       {/* Student picker */}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { ArrowUpCircle, ArrowRight, Users, AlertCircle, CheckSquare, Square } from 'lucide-react'
+import { ArrowUpCircle, ArrowRight, Users, AlertCircle, AlertTriangle, CheckSquare, Square } from 'lucide-react'
 import { PageHeader, Spinner, Confirm } from '../../components/ui'
 
 const TABS = [
@@ -27,9 +27,11 @@ export default function PromotePage() {
 
   // Term change filters
   const [fromTerm, setFromTerm]     = useState('')
+  const [fromTermSession, setFromTermSession] = useState('')
   const [destSession, setDestSession] = useState('')
   const [destTerm, setDestTerm]     = useState('')
   const [destTerms, setDestTerms]   = useState([])
+  const [currentTerm, setCurrentTerm] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -39,6 +41,7 @@ export default function PromotePage() {
       ])
       setSessions(sess)
       setClasses(cls.filter(c => c.is_active))
+      try { setCurrentTerm(await window.api.getCurrentTerm()) } catch {}
       setLoading(false)
     }
     load()
@@ -90,9 +93,22 @@ export default function PromotePage() {
     setSelected(selected.length === students.length ? [] : students.map(s => s.id))
   }
 
+  // ── Forward-only guard (mirrors backend termOrder) ────────────────────────
+  const TERM_RANK = { 'First Term': 1, 'Second Term': 2, 'Third Term': 3 }
+  const orderKey = (sessName, termName) => `${sessName || ''}#${TERM_RANK[termName] || 0}`
+  const curKey = currentTerm ? orderKey(currentTerm.session_name, currentTerm.name) : null
+  const toTermName = terms.find(t => t.id === Number(toTerm))?.name
+  const toSessName = sessions.find(s => s.id === Number(toSession))?.name
+  const toKey = (toTerm && toSession) ? orderKey(toSessName, toTermName) : null
+  let promoteOrderError = ''
+  if (curKey && toKey) {
+    if (toKey === curKey) promoteOrderError = `Students are already in ${currentTerm.name}, ${currentTerm.session_name}. Choose a later term to promote into.`
+    else if (toKey < curKey) promoteOrderError = 'You can only promote forward — the destination term cannot be earlier than the current term.'
+  }
+
   // ── Promote ────────────────────────────────────────────────────────────────
   const doPromote = async () => {
-    if (!selected.length || !toSession || !toTerm || !toClass) return
+    if (!selected.length || !toSession || !toTerm || !toClass || promoteOrderError) return
     setRunning(true)
     try {
       const result = await window.api.promoteStudents({
@@ -100,6 +116,7 @@ export default function PromotePage() {
         new_session_id: Number(toSession),
         new_term_id: Number(toTerm),
         new_class_id: Number(toClass),
+        from_term_id: currentTerm?.id,
       })
       toast.success(`${result.count} students promoted to ${classes.find(c=>c.id===Number(toClass))?.name}`)
       setFromClass('')
@@ -114,8 +131,20 @@ export default function PromotePage() {
   }
 
   // ── Term change ────────────────────────────────────────────────────────────
+  const termFromKey = (fromTerm && fromTermSession)
+    ? orderKey(sessions.find(s => s.id === Number(fromTermSession))?.name, terms.find(t => t.id === Number(fromTerm))?.name)
+    : null
+  const termToKey = (destTerm && destSession)
+    ? orderKey(sessions.find(s => s.id === Number(destSession))?.name, destTerms.find(t => t.id === Number(destTerm))?.name)
+    : null
+  let changeTermError = ''
+  if (termFromKey && termToKey) {
+    if (termToKey === termFromKey) changeTermError = 'Source and destination terms are the same. Choose a later term.'
+    else if (termToKey < termFromKey) changeTermError = 'You can only move students forward — the destination term cannot be earlier than the source term.'
+  }
+
   const doChangeTerm = async () => {
-    if (!fromTerm || !destSession || !destTerm) return
+    if (!fromTerm || !destSession || !destTerm || changeTermError) return
     setRunning(true)
     try {
       const result = await window.api.changeTerm({
@@ -197,6 +226,13 @@ export default function PromotePage() {
             </div>
           </div>
 
+          {promoteOrderError && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-sm text-amber-800">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+              <span>{promoteOrderError}</span>
+            </div>
+          )}
+
           {/* Student selection */}
           {students.length > 0 && (
             <div className="card overflow-hidden p-0">
@@ -213,7 +249,7 @@ export default function PromotePage() {
                 </div>
                 <button
                   className="btn-primary btn btn-sm"
-                  disabled={!selected.length || !toSession || !toTerm || !toClass || running}
+                  disabled={!selected.length || !toSession || !toTerm || !toClass || running || promoteOrderError}
                   onClick={() => setConfirm('promote')}
                 >
                   <ArrowUpCircle size={14} />
@@ -269,6 +305,7 @@ export default function PromotePage() {
               <div className="col-span-2">
                 <label className="form-label">From Session</label>
                 <select className="form-select" onChange={async e => {
+                  setFromTermSession(e.target.value)
                   const terms = await window.api.listTerms(Number(e.target.value))
                   setTerms(terms)
                   setFromTerm('')
@@ -307,10 +344,17 @@ export default function PromotePage() {
               </div>
             )}
 
+            {changeTermError && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-sm text-amber-800">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                <span>{changeTermError}</span>
+              </div>
+            )}
+
             <div className="mt-4 flex justify-end">
               <button
                 className="btn-primary btn"
-                disabled={!fromTerm || !destSession || !destTerm || !students.length || running}
+                disabled={!fromTerm || !destSession || !destTerm || !students.length || running || changeTermError}
                 onClick={() => setConfirm('term')}
               >
                 <ArrowRight size={15} /> Move {students.length} Students to New Term

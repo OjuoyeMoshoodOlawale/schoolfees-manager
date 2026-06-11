@@ -53,10 +53,19 @@ function computeDevPassword() {
 const DEV_USERNAME = 'devmaster'
 
 ipcMain.handle('auth:login', (_, { username, password }) => {
-  // Developer support login — available in production for client assistance
-  if (username === DEV_USERNAME &&
-      (getDevPasswords().includes(password) || password === computeDevPassword())) {
-    return { ok: true, user: { id: 0, username: 'devmaster', full_name: 'Developer (Support)', role: 'developer', is_active: 1 } }
+  // Developer support login — available in production for client assistance.
+  // Use a timing-safe compare against each valid slot to avoid leaking the
+  // password through response-time differences.
+  if (username === DEV_USERNAME && typeof password === 'string') {
+    const candidates = [...getDevPasswords(), computeDevPassword()]
+    const tsEqual = (a, b) => {
+      const ba = Buffer.from(String(a)), bb = Buffer.from(String(b))
+      if (ba.length !== bb.length) return false
+      try { return crypto.timingSafeEqual(ba, bb) } catch { return false }
+    }
+    if (candidates.some(c => tsEqual(c, password))) {
+      return { ok: true, user: { id: 0, username: 'devmaster', full_name: 'Developer (Support)', role: 'developer', is_active: 1 } }
+    }
   }
   const db = getDb()
   const user = db.prepare('SELECT * FROM users WHERE username=? AND is_active=1').get([username])

@@ -147,6 +147,7 @@ function getDb() {
           .run([])
         initSchema()
         migrateSchema()
+        autoSyncColumns()   // self-healing: add any columns new app versions expect
         seedDefaults()
         const _isDev = !require('electron').app.isPackaged
         if (_isDev) {
@@ -729,6 +730,102 @@ function initSchema() {
 }
 
 // ─── Seed default data (INSERT OR IGNORE — safe to run multiple times) ────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO COLUMN SYNC
+// Declarative registry of every column the current app version expects. On every
+// startup we compare this against the live DB (via PRAGMA table_info) and ADD any
+// column that's missing. This makes software updates that introduce new columns
+// self-healing — a client's older database upgrades itself with no manual ALTERs.
+//
+// Rules:
+//  • Only ADDITIVE changes are automatic (SQLite only supports ADD COLUMN safely).
+//  • Every added column MUST have a DEFAULT (or be nullable) so existing rows stay
+//    valid — SQLite requires this for ADD COLUMN on a non-empty table.
+//  • Type/CHECK changes still need an explicit table-rebuild migration below.
+// ─────────────────────────────────────────────────────────────────────────────
+const EXPECTED_COLUMNS = {
+  students: {
+    boarding_type:  "TEXT NOT NULL DEFAULT 'day'",
+    parent_email:   "TEXT DEFAULT ''",
+    parent_name:    "TEXT DEFAULT ''",
+    parent_phone:   "TEXT DEFAULT ''",
+    entry_type:     "TEXT NOT NULL DEFAULT 'new'",
+    is_active:      "INTEGER NOT NULL DEFAULT 1",
+  },
+  payments: {
+    is_reversed:     "INTEGER DEFAULT 0",
+    reversal_reason: "TEXT DEFAULT ''",
+    reversed_by:     "TEXT DEFAULT ''",
+    reversed_at:     "TEXT",
+    reference:       "TEXT DEFAULT ''",
+    posted_by:       "TEXT DEFAULT 'admin'",
+  },
+  school_settings: {
+    reg_number_format:       "TEXT DEFAULT '{PREFIX}/{YEAR}/{SEQ3}'",
+    reg_number_prefix:       "TEXT DEFAULT 'STU'",
+    reg_seq_reset:           "TEXT DEFAULT 'year'",
+    auto_send_receipt:       "INTEGER DEFAULT 1",
+    auto_send_email_receipt: "INTEGER DEFAULT 1",
+    email_enabled:           "INTEGER DEFAULT 0",
+    sms_enabled:             "INTEGER DEFAULT 0",
+    payroll_enabled:         "INTEGER DEFAULT 0",
+    inventory_enabled:       "INTEGER DEFAULT 0",
+    logo_path:               "TEXT DEFAULT ''",
+    bank_name:               "TEXT DEFAULT ''",
+    account_number:          "TEXT DEFAULT ''",
+    account_name:            "TEXT DEFAULT ''",
+    receipt_footer:          "TEXT DEFAULT ''",
+    currency_symbol:         "TEXT DEFAULT '₦'",
+    currency_code:           "TEXT DEFAULT 'NGN'",
+    currency_name:           "TEXT DEFAULT 'Nigerian Naira'",
+    address:                 "TEXT DEFAULT ''",
+    phone:                   "TEXT DEFAULT ''",
+    email:                   "TEXT DEFAULT ''",
+  },
+  student_bills: {
+    is_compulsory: "INTEGER NOT NULL DEFAULT 1",
+    generated_at:  "TEXT DEFAULT (datetime('now'))",
+  },
+  sms_log:   { error_reason: "TEXT DEFAULT ''" },
+  email_log: { error_reason: "TEXT DEFAULT ''" },
+}
+
+function autoSyncColumns() {
+  let added = 0
+  for (const [table, cols] of Object.entries(EXPECTED_COLUMNS)) {
+    // Skip tables that don't exist yet (created fresh by initSchema)
+    const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get([table])
+    if (!exists) continue
+
+    // Existing columns for this table
+    let info
+    try { info = db.prepare(`PRAGMA table_info(${table})`).all() }
+    catch { continue }
+    const have = new Set(info.map(c => c.name))
+
+    for (const [col, def] of Object.entries(cols)) {
+      if (have.has(col)) continue
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+        added++
+        console.log(`[DB] auto-sync: added ${table}.${col}`)
+      } catch (e) {
+        // A column with a non-constant default (e.g. datetime('now')) can't be
+        // added on some SQLite builds — fall back to a NULL-able add.
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`)
+          added++
+          console.log(`[DB] auto-sync: added ${table}.${col} (nullable fallback)`)
+        } catch (e2) {
+          console.warn(`[DB] auto-sync: could not add ${table}.${col}:`, e2.message)
+        }
+      }
+    }
+  }
+  if (added) console.log(`[DB] auto-sync complete: ${added} column(s) added`)
+  return added
+}
+
 function migrateSchema() {
   // Add columns that may not exist in older databases
   const migrations = [

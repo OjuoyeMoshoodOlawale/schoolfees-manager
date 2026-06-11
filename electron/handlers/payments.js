@@ -112,6 +112,7 @@ safeHandle('payments:post', (_, data) => {
   // auto_send_email_receipt + email_enabled. Skip reasons are logged so the
   // bursar can see why a receipt didn't go (no email, SMS off, etc.) in the logs.
   setImmediate(async () => {
+    const sendStatus = { receipt_number, sms: null, email: null }
     try {
       const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
       const student  = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
@@ -131,14 +132,17 @@ safeHandle('payments:post', (_, data) => {
       if (settings?.auto_send_receipt) {
         const { sendSms, logSms } = require('./communications')
         if (!settings.sms_enabled) {
+          sendStatus.sms = { ok: false, error: 'SMS provider disabled' }
           logSms(db, { phone: student.parent_phone || '(none)', student_id, message: `Receipt ${receipt_number}`,
             result: { ok: false, error: 'SMS provider disabled in Settings' } })
         } else if (!student.parent_phone) {
+          sendStatus.sms = { ok: false, error: 'No parent phone' }
           logSms(db, { phone: '(none)', student_id, message: `Receipt ${receipt_number}`,
             result: { ok: false, error: 'Student has no parent phone number' } })
         } else {
           const msg = `${schoolName}: Payment received. Receipt ${receipt_number}. Amount: ${fmtAmt(amt)}. Balance: ${fmtAmt(balance)}. For ${student.first_name} ${student.last_name}${classRow ? ' ('+classRow.name+')' : ''}. Thank you.`
           const r = await sendSms(settings, student.parent_phone, msg)
+          sendStatus.sms = { ok: !!r.ok, error: r.error, to: student.parent_phone }
           logSms(db, { phone: student.parent_phone, student_id, message: msg, result: r })
         }
       }
@@ -147,9 +151,11 @@ safeHandle('payments:post', (_, data) => {
       if (settings?.auto_send_email_receipt) {
         const { sendEmail, buildReceiptHtml, logEmail } = require('./communications')
         if (!settings.email_enabled) {
+          sendStatus.email = { ok: false, error: 'Email disabled' }
           logEmail(db, { email: student.parent_email || '(none)', student_id, subject: `Receipt ${receipt_number}`,
             body: '', result: { ok: false, error: 'Email sending disabled in Settings' } })
         } else if (!student.parent_email) {
+          sendStatus.email = { ok: false, error: 'No parent email' }
           logEmail(db, { email: '(none)', student_id, subject: `Receipt ${receipt_number}`,
             body: '', result: { ok: false, error: 'Student has no parent email' } })
         } else {
@@ -161,6 +167,7 @@ safeHandle('payments:post', (_, data) => {
             subject: `Payment Receipt ${receipt_number} — ${schoolName}`,
             html, logoPath: settings.logo_path || null,
           })
+          sendStatus.email = { ok: !!result.ok, error: result.error, to: student.parent_email }
           logEmail(db, { email: student.parent_email, student_id, subject: `Receipt ${receipt_number}`, body: html, result })
         }
       }
@@ -170,6 +177,15 @@ safeHandle('payments:post', (_, data) => {
         const { logError } = require('./errorHandler')
         logError({ handler: 'auto-receipt', message: e.message, stack: e.stack,
           context: JSON.stringify({ student_id, receipt_number }), severity: 'warning' })
+      } catch {}
+    } finally {
+      // Tell the renderer how the receipt sends went, so the bursar sees a toast
+      try {
+        const { BrowserWindow } = require('electron')
+        const win = BrowserWindow.getAllWindows()[0]
+        if (win && (sendStatus.sms || sendStatus.email)) {
+          win.webContents.send('receipt:auto-sent', sendStatus)
+        }
       } catch {}
     }
   })
@@ -336,20 +352,22 @@ safeHandle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
 
     // Send reversal alert to parent asynchronously
     setImmediate(async () => {
+      const revStatus = { receipt_number: reversal_receipt, sms: null, email: null, reversal: true }
       try {
         const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
-        if (!settings?.auto_send_receipt) return
         const student  = db.prepare('SELECT * FROM students WHERE id=?').get([payment.student_id])
         if (!student) return
+        const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
         const currency = settings.currency_symbol || '₦'
         const fmtAmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
         const schoolName = settings.school_name || 'SchoolFees Manager'
 
-        // SMS reversal alert
+        // SMS reversal alert — sent whenever SMS is enabled (independent of auto-receipt)
         if (settings.sms_enabled && student.parent_phone) {
           const { sendSms, logSms } = require('./communications')
           const msg = `${schoolName}: REVERSAL NOTICE — Payment of ${fmtAmt(payment.amount_paid)} (Receipt ${payment.receipt_number}) for ${student.first_name} ${student.last_name} has been reversed. Ref: ${reversal_receipt}. Reason: ${reason || 'Not stated'}.`
           const r = await sendSms(settings, student.parent_phone, msg)
+          revStatus.sms = { ok: !!r.ok, error: r.error, to: student.parent_phone }
           logSms(db, { phone: student.parent_phone, student_id: student.id, message: msg, result: r })
         }
         // Email reversal alert
@@ -357,20 +375,28 @@ safeHandle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
           const { sendEmail, logEmail } = require('./communications')
           const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff;border-radius:12px;border:2px solid #fca5a5">
             <h2 style="color:#dc2626;text-align:center">&#9888; Payment Reversal Notice</h2>
-            <p style="color:#374151">Dear ${student.parent_name || 'Parent'},</p>
-            <p>A payment for <strong>${student.first_name} ${student.last_name}</strong> has been reversed:</p>
+            <p style="color:#374151">Dear ${esc(student.parent_name || 'Parent')},</p>
+            <p>A payment for <strong>${esc(student.first_name)} ${esc(student.last_name)}</strong> has been reversed:</p>
             <table style="width:100%;border-collapse:collapse;margin:16px 0">
-              <tr><td style="padding:6px 0;color:#6b7280">Original Receipt</td><td style="font-weight:600">${payment.receipt_number}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Original Receipt</td><td style="font-weight:600">${esc(payment.receipt_number)}</td></tr>
               <tr><td style="padding:6px 0;color:#6b7280">Amount</td><td style="font-weight:600;color:#dc2626">${fmtAmt(payment.amount_paid)}</td></tr>
-              <tr><td style="padding:6px 0;color:#6b7280">Reversal Receipt</td><td style="font-weight:600">${reversal_receipt}</td></tr>
-              <tr><td style="padding:6px 0;color:#6b7280">Reason</td><td>${reason || 'Not stated'}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Reversal Receipt</td><td style="font-weight:600">${esc(reversal_receipt)}</td></tr>
+              <tr><td style="padding:6px 0;color:#6b7280">Reason</td><td>${esc(reason || 'Not stated')}</td></tr>
             </table>
-            <p style="color:#6b7280;font-size:13px">If you have questions, contact ${schoolName}${settings.phone ? ' on '+settings.phone : ''}.</p>
+            <p style="color:#6b7280;font-size:13px">If you have questions, contact ${esc(schoolName)}${settings.phone ? ' on '+esc(settings.phone) : ''}.</p>
           </div>`
-          const r = await sendEmail(settings, { to: student.parent_email, subject: `Payment Reversal Notice — ${reversal_receipt} | ${schoolName}`, html })
+          const r = await sendEmail(settings, { to: student.parent_email, subject: `Payment Reversal Notice — ${reversal_receipt} | ${schoolName}`, html, logoPath: settings.logo_path || null })
+          revStatus.email = { ok: !!r.ok, error: r.error, to: student.parent_email }
           logEmail(db, { email: student.parent_email, student_id: student.id, subject: `Reversal ${reversal_receipt}`, body: html, result: r })
         }
       } catch(e) { console.error('[reversal-notify]', e.message) }
+      finally {
+        try {
+          const { BrowserWindow } = require('electron')
+          const win = BrowserWindow.getAllWindows()[0]
+          if (win && (revStatus.sms || revStatus.email)) win.webContents.send('receipt:auto-sent', revStatus)
+        } catch {}
+      }
     })
 
     return { ok: true, reversal_receipt }
@@ -554,11 +580,16 @@ ipcMain.handle('reports:account', (_, { session_id, term_id } = {}) => {
   const allClassIds = new Set([...billsByClass.map(r => r.class_id), ...paidPerClass.keys()])
   const billsMap   = new Map(billsByClass.map(r => [r.class_id, Number(r.total_billed)]))
 
-  const byClass = [...allClassIds].map(cid => ({
-    class_name:   classMap.get(cid) || `Class ${cid}`,
-    total_billed: billsMap.get(cid) || 0,
-    total_paid:   paidPerClass.get(cid) || 0,
-  })).sort((a, b) => a.class_name.localeCompare(b.class_name))
+  const byClass = [...allClassIds].map(cid => {
+    const billed = billsMap.get(cid) || 0
+    const paid   = paidPerClass.get(cid) || 0
+    return {
+      class_name:   classMap.get(cid) || `Class ${cid}`,
+      total_billed: billed,
+      total_paid:   paid,
+      balance:      billed - paid,
+    }
+  }).sort((a, b) => a.class_name.localeCompare(b.class_name))
 
   // Payment methods — exclude reversed payments
   const byMethod = db.prepare(`

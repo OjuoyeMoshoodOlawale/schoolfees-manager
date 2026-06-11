@@ -263,4 +263,9 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('backup:auto-done', handler)
     return () => ipcRenderer.removeListener('backup:auto-done', handler)
   },
+  onReceiptAutoSent:  (cb)   => {
+    const handler = (_e, data) => cb(data)
+    ipcRenderer.on('receipt:auto-sent', handler)
+    return () => ipcRenderer.removeListener('receipt:auto-sent', handler)
+  },
 })

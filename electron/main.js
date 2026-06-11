@@ -281,6 +281,7 @@ function createWindow() {
 
   win = new BrowserWindow({
     width: 1366, height: 820, minWidth: 1024, minHeight: 680,
+    autoHideMenuBar: true,   // hide the menu bar (Alt reveals it temporarily in dev)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -290,6 +291,9 @@ function createWindow() {
     titleBarStyle: 'default',
     show: false,
   })
+  // Remove the application menu entirely so no menu bar shows in any build
+  win.setMenuBarVisibility(false)
+  Menu.setApplicationMenu(null)
   if (isDev) {
     win.loadURL('http://localhost:5173')
   } else {

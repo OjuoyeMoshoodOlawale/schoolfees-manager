@@ -14,7 +14,8 @@
     "test": "node scripts/run-tests.js",
     "gen:key": "node scripts/gen-activation-key.js",
     "gen:devpass": "node scripts/gen-dev-password.js",
-    "gen:reset": "node scripts/gen-reset-code.js"
+    "gen:reset": "node scripts/gen-reset-code.js",
+    "seed:demo": "node scripts/seed-demo.js"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

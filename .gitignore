@@ -52,6 +52,4 @@ database/gdrive_token.json
 database/gdrive_config.json
 database/scheduler_config.json
 
-# Build resources (icon.ico must be added manually by developer)
-build-resources/icon.ico
-build-resources/icon.png
+# Build resources — brand icons are now generated and committed

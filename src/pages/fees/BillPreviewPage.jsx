@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Eye, AlertCircle, Users, Filter } from 'lucide-react'
+import { Eye, AlertCircle, Users, Filter, Printer } from 'lucide-react'
 import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
 import { toast } from 'react-toastify'
 import { Download } from 'lucide-react'
+import { printCleanHtml } from '../../lib/utils'
 
 const fmt = (n) => `₦${Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
@@ -90,6 +91,8 @@ export default function BillPreviewPage() {
   const [selClass, setSelClass]   = useState('')
   const [profiles, setProfiles]   = useState(null)
   const [loading, setLoading]     = useState(false)
+  const [school, setSchool]       = useState(null)
+  const [printing, setPrinting]   = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -98,6 +101,7 @@ export default function BillPreviewPage() {
         window.api.listClasses(),
         window.api.getCurrentTerm(),
       ])
+      window.api.getSettings().then(setSchool).catch(() => {})
       setSessions(sess)
       setClasses(cls.filter(c => c.is_active))
       if (currentTerm) {
@@ -140,6 +144,64 @@ export default function BillPreviewPage() {
 
   const hasAnyItem = profiles?.some(p => p.items.length > 0)
 
+  // Print a generic fee bill (no student name) for a walk-in parent enquiry.
+  // Prints each student-profile's fee breakdown for the selected class/term.
+  const handlePrintEnquiry = async () => {
+    if (!profiles || !hasAnyItem) return
+    setPrinting(true)
+    try {
+      const sym = school?.currency_symbol || '₦'
+      const fmtN = n => sym + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+      const esc = v => String(v ?? '').replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]))
+      const className = classes.find(c => c.id === Number(selClass))?.name || ''
+      const termName  = terms.find(t => t.id === Number(selTerm))?.name || ''
+      const sessName  = sessions.find(s => s.id === Number(selSession))?.name || ''
+      const schoolName = esc(school?.school_name || 'School')
+      const logoHtml = school?.logo_path
+        ? `<img src="localfile://${school.logo_path}" style="max-height:56px;max-width:140px;display:block;margin:0 auto 8px;object-fit:contain"/>` : ''
+      const addr = [school?.address, school?.phone, school?.email].filter(Boolean).map(esc).join(' &bull; ')
+
+      const profileBlocks = profiles.filter(p => p.items.length > 0).map(p => {
+        const label = `${p.gender === 'M' ? 'Male' : 'Female'} · ${p.student_type} · ${p.boarding}`
+        const rows = p.items.map(it => `
+          <tr><td style="padding:4px 12px;font-size:9.5pt">${esc(it.fee_item_name)}</td>
+          <td style="padding:4px 12px;font-size:9pt;text-align:center;color:#64748b">${it.is_compulsory ? 'Compulsory' : 'Elective'}</td>
+          <td style="padding:4px 12px;font-size:9.5pt;text-align:right;font-weight:600">${fmtN(it.amount)}</td></tr>`).join('')
+        return `
+          <div style="margin-bottom:14px;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden">
+            <div style="background:#1e293b;color:#fff;padding:6px 12px;font-size:9.5pt;font-weight:bold;display:flex;justify-content:space-between">
+              <span>${esc(label)}</span><span>${fmtN(p.total)}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse">${rows}</table>
+          </div>`
+      }).join('')
+
+      const html = `<div style="font-family:Georgia,'Times New Roman',serif;max-width:600px;margin:0 auto;color:#1e293b">
+        <div style="text-align:center;padding:14px 20px 10px;border-bottom:2px solid #1e293b">
+          ${logoHtml}
+          <div style="font-size:15pt;font-weight:bold;text-transform:uppercase;letter-spacing:.04em">${schoolName}</div>
+          ${addr ? `<div style="font-size:8.5pt;color:#64748b;margin-top:3px;font-family:Arial,sans-serif">${addr}</div>` : ''}
+        </div>
+        <div style="text-align:center;padding:8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-family:Arial,sans-serif">
+          <span style="font-size:11pt;font-weight:bold;letter-spacing:.06em">SCHOOL FEES SCHEDULE — ${esc((termName||'').toUpperCase())}, ${esc(sessName)}</span><br/>
+          <span style="font-size:10pt;color:#475569">Class: ${esc(className)}</span>
+        </div>
+        <div style="padding:14px 16px">
+          ${profileBlocks}
+          <p style="font-size:8.5pt;color:#94a3b8;text-align:center;margin-top:14px;font-family:Arial,sans-serif">
+            This is an indicative fee schedule for enquiry purposes. Actual fees depend on the student's category.
+          </p>
+        </div>
+      </div>`
+      await printCleanHtml(html)
+    } catch (e) {
+      toast.error('Print failed: ' + e.message)
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl">
       <PageHeader
@@ -147,9 +209,14 @@ export default function BillPreviewPage() {
         subtitle="See what each student profile would be billed for a selected class and term."
         actions={
           profiles && hasAnyItem && (
-            <button className="btn-secondary btn btn-sm" onClick={handleExport}>
-              <Download size={14} /> Export Excel
-            </button>
+            <div className="flex gap-2">
+              <button className="btn-secondary btn btn-sm" onClick={handlePrintEnquiry} disabled={printing}>
+                <Printer size={14} /> {printing ? 'Printing…' : 'Print Schedule'}
+              </button>
+              <button className="btn-secondary btn btn-sm" onClick={handleExport}>
+                <Download size={14} /> Export Excel
+              </button>
+            </div>
           )
         }
       />

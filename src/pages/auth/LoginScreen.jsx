@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { GraduationCap, LogIn, Eye, EyeOff, Lock, KeyRound, Copy, CheckCircle2, X } from 'lucide-react'
+import { WebAutomateMark } from '../../components/WebAutomateMark'
 import { Field } from '../../components/ui'
 
 export default function LoginScreen({ schoolName, logoPath, onLogin }) {
@@ -113,9 +114,7 @@ export default function LoginScreen({ schoolName, logoPath, onLogin }) {
         <p className="text-center text-xs text-slate-600 mt-4 flex items-center justify-center gap-1.5">
           <span>Powered by</span>
           <span className="flex items-center gap-1 font-semibold text-slate-400">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
+            <WebAutomateMark size={11} />
             webAutomate Nigeria
           </span>
         </p>

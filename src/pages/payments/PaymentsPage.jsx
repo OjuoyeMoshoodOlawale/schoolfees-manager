@@ -433,24 +433,29 @@ export default function PaymentsPage() {
               <Receipt size={12} />
             </button>
           )}
-          {/* Reverse — only for positive, non-reversed payments */}
+          {/* Reverse — the proper way to undo a payment (keeps an audit trail).
+              Only for positive, non-reversed payments. */}
           {row.amount_paid > 0 && row.is_reversed !== 1 && (
             <button
-              title="Reverse this payment"
+              title="Reverse this payment (with reason)"
               className="btn btn-sm text-amber-600 hover:bg-amber-50 border border-amber-200"
               onClick={e => { e.stopPropagation(); setReverseTarget(row) }}
             >
               <RotateCcw size={12} />
             </button>
           )}
-          {/* Delete */}
-          <button
-            title="Delete record"
-            className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
-            onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
-          >
-            <Trash2 size={12} />
-          </button>
+          {/* Delete is intentionally NOT offered for real payments — reversing
+              preserves the audit trail. Only reversal entries (the negative
+              counter-records) can be cleaned up by an admin if needed. */}
+          {row.amount_paid < 0 && (
+            <button
+              title="Delete this reversal entry"
+              className="btn btn-sm text-red-500 hover:bg-red-50 border border-red-200"
+              onClick={e => { e.stopPropagation(); setDeleteTarget(row) }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
         </div>
       )
     },

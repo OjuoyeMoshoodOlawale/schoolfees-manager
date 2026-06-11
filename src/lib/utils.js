@@ -154,6 +154,8 @@ export function buildReceiptPrintHtml({ payment, school, totalBilled = null, tot
   const e = escapeHtml
   const schoolName = e(school?.school_name || 'School')
   const isReversal = Number(payment.amount_paid) < 0
+  // An original positive receipt that has since been reversed — mark it clearly
+  const wasReversed = !isReversal && (payment.is_reversed === 1 || payment.is_reversed === true)
   const paid = Math.abs(Number(payment.amount_paid))
   const balance = totalBilled !== null && totalPaid !== null
     ? Math.max(0, Number(totalBilled) - Number(totalPaid)) : null
@@ -182,7 +184,9 @@ export function buildReceiptPrintHtml({ payment, school, totalBilled = null, tot
     summaryRows.push(['Outstanding Balance', balance > 0 ? f(balance) : f(0) + ' — FULLY PAID', true])
 
   return `
-  <div style="font-family:Georgia,'Times New Roman',serif;max-width:560px;margin:0 auto;color:#1e293b;border:2px solid #1e293b;">
+  <div style="position:relative;font-family:Georgia,'Times New Roman',serif;max-width:560px;margin:0 auto;color:#1e293b;border:2px solid #1e293b;">
+    ${wasReversed ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);font-size:46pt;font-weight:bold;color:rgba(220,38,38,0.16);letter-spacing:.1em;pointer-events:none;white-space:nowrap;z-index:5;">REVERSED</div>` : ''}
+    ${wasReversed ? `<div style="background:#fef2f2;color:#b91c1c;text-align:center;padding:5px;font-size:9.5pt;font-weight:bold;font-family:Arial,sans-serif;border-bottom:1px solid #fecaca;">⚠ THIS PAYMENT HAS BEEN REVERSED — receipt void</div>` : ''}
     <div style="text-align:center;padding:18px 24px 12px;border-bottom:2px solid #1e293b;">
       ${logoHtml}
       <div style="font-size:16pt;font-weight:bold;text-transform:uppercase;letter-spacing:.04em;">${schoolName}</div>

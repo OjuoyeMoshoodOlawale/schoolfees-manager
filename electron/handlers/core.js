@@ -203,12 +203,29 @@ safeHandle('students:update', (_, { id, class_id, parent_email='', ...data }) =>
 })
 safeHandle('students:delete', (_, id) => {
   const db = getDb()
-  // Block delete if student has any financial records
-  const hasPayments = db.prepare('SELECT id FROM payments WHERE student_id=? LIMIT 1').get(id)
-  if (hasPayments) throw new Error('This student has payment records and cannot be deleted. Mark them as inactive instead.')
-  const hasBills = db.prepare('SELECT id FROM student_bills WHERE student_id=? LIMIT 1').get(id)
-  if (hasBills) throw new Error('This student has bill records and cannot be deleted. Mark them as inactive instead.')
-  db.prepare('DELETE FROM students WHERE id=?').run(id)
+  // Block delete only if the student has REAL financial history (any payment).
+  // Auto-generated unpaid bills don't count — a freshly added student (e.g. a
+  // test record) can still be removed; their bills/adjustments are cleaned up.
+  const hasPayments = db.prepare(
+    'SELECT id FROM payments WHERE student_id=? LIMIT 1'
+  ).get(id)
+  if (hasPayments) {
+    throw new Error('This student has payment records and cannot be deleted. Mark them as inactive instead.')
+  }
+
+  db.exec('BEGIN')
+  try {
+    // Clean up dependent records that carry no financial value
+    db.prepare('DELETE FROM student_bills WHERE student_id=?').run(id)
+    db.prepare('DELETE FROM bill_adjustments WHERE student_id=?').run(id)
+    db.prepare('DELETE FROM previous_term_balance WHERE student_id=?').run(id)
+    db.prepare('DELETE FROM student_status WHERE student_id=?').run(id)
+    db.prepare('DELETE FROM students WHERE id=?').run(id)
+    db.exec('COMMIT')
+  } catch (e) {
+    db.exec('ROLLBACK')
+    throw e
+  }
   return { ok: true }
 })
 ipcMain.handle('students:next-reg', () => {
@@ -324,8 +341,24 @@ ipcMain.handle('status:update', (_, { student_id, status }) => {
 })
 
 // Promote students: insert new student_status for a new term
-ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id, new_class_id }) => {
+ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id, new_class_id, from_term_id }) => {
   const db = getDb()
+
+  // ── Guard: promote only moves students FORWARD in time ────────────────────
+  // The source term is whatever the caller is promoting from (defaults to the
+  // current term). Promoting into the same or an earlier term is rejected.
+  const { compareTerms } = require('../lib/termOrder')
+  const sourceTerm = from_term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (sourceTerm) {
+    const cmp = compareTerms(db, sourceTerm, new_term_id)
+    if (cmp === 0) {
+      throw new Error('You cannot promote students into the same term they are already in. Choose a later term.')
+    }
+    if (cmp > 0) {
+      throw new Error('You can only promote students forward — the destination term cannot be earlier than the current term.')
+    }
+  }
+
   const insert = db.prepare(`INSERT OR IGNORE INTO student_status
     (student_id, session_id, term_id, class_id, status, is_new_student)
     VALUES (?,?,?,?,'active',0)`)
@@ -356,6 +389,13 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
 // Change term (same class, active students)
 ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }) => {
   const db = getDb()
+
+  // ── Guard: move students FORWARD only ──────────────────────────────────────
+  const { compareTerms } = require('../lib/termOrder')
+  const cmp = compareTerms(db, fromTermId, toTermId)
+  if (cmp === 0) throw new Error('Source and destination terms are the same. Choose a later term.')
+  if (cmp > 0) throw new Error('You can only move students forward — the destination term cannot be earlier than the source term.')
+
   const active = db.prepare('SELECT * FROM student_status WHERE term_id=? AND status=?')
     .all([fromTermId, 'active'])
   const insert = db.prepare(`INSERT OR IGNORE INTO student_status

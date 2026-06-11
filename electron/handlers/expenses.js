@@ -263,10 +263,10 @@ ipcMain.handle('expenses:report', (_, { from_date, to_date } = {}) => {
     GROUP BY e.supplier_id ORDER BY total DESC LIMIT 10
   `).all(params)
 
-  const totalApproved = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE status IN ('approved','paid') ${dateWhere}`).get(params)?.t || 0
-  const totalPaid     = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE status='paid' ${dateWhere}`).get(params)?.t || 0
-  const totalDraft    = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE status='draft' ${dateWhere}`).get(params)?.t || 0
-  const totalCount    = db.prepare(`SELECT COUNT(*) as n FROM expenses WHERE status!='rejected' ${dateWhere}`).get(params)?.n || 0
+  const totalApproved = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses e WHERE status IN ('approved','paid') ${dateWhere}`).get(params)?.t || 0
+  const totalPaid     = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses e WHERE status='paid' ${dateWhere}`).get(params)?.t || 0
+  const totalDraft    = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses e WHERE status='draft' ${dateWhere}`).get(params)?.t || 0
+  const totalCount    = db.prepare(`SELECT COUNT(*) as n FROM expenses e WHERE status!='rejected' ${dateWhere}`).get(params)?.n || 0
 
   return { byCategory, byStatus, bySupplier, totalApproved, totalPaid, totalDraft, totalCount }
 })

@@ -49,9 +49,29 @@ export default function BulkSmsPage() {
     setSending(true)
     setResult(null)
     try {
+      // If the message uses <<bal>>, fetch each selected student's balance
+      const needsBalance = /<<\s*bal(ance)?\s*>>/i.test(message)
+      const balanceMap = {}
+      if (needsBalance) {
+        await Promise.all(
+          selected.map(async id => {
+            try {
+              const sum = await window.api.getStudentBillSummary({ student_id: id })
+              balanceMap[id] = sum?.balance ?? 0
+            } catch { balanceMap[id] = 0 }
+          })
+        )
+      }
+
       const recipients = students
         .filter(s => selected.includes(s.id))
-        .map(s => ({ phone: s.parent_phone, student_id: s.id, name: `${s.last_name} ${s.first_name}` }))
+        .map(s => ({
+          phone: s.parent_phone,
+          student_id: s.id,
+          name: `${s.last_name} ${s.first_name}`.trim(),
+          first_name: s.first_name,
+          balance: needsBalance ? balanceMap[s.id] : null,
+        }))
 
       const res = await window.api.sendBulkSms({ recipients, message: message.trim() })
       setResult(res)
@@ -63,6 +83,9 @@ export default function BulkSmsPage() {
     } catch (e) { toast.error(e.message || 'Failed') }
     finally { setSending(false) }
   }
+
+  // Insert a placeholder at the end of the current message
+  const insertToken = (token) => setMessage(m => (m ? m + ' ' : '') + token)
 
   const charsLeft = 160 - message.length
   const msgParts  = Math.ceil(message.length / 160)
@@ -106,18 +129,37 @@ export default function BulkSmsPage() {
           <span className={charsLeft < 0 ? 'text-red-500' : ''}>{charsLeft > 0 ? `${charsLeft} chars left (1 SMS)` : `${msgParts} SMS units`}</span>
         </div>
 
+        {/* Personalisation tokens */}
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400">Insert:</span>
+          {[
+            { token: '<<name>>', label: "Parent/ward name" },
+            { token: '<<bal>>',  label: 'Outstanding balance' },
+            { token: '<<school>>', label: 'School name' },
+          ].map(t => (
+            <button key={t.token} title={t.label}
+              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-mono px-2 py-1 rounded transition"
+              onClick={() => insertToken(t.token)}>
+              {t.token}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1.5">
+          Tokens are replaced per recipient. Example: “Dear Parent, your ward <span className="font-mono">&lt;&lt;name&gt;&gt;</span> has an outstanding balance of <span className="font-mono">&lt;&lt;bal&gt;&gt;</span>.”
+        </p>
+
         {/* Quick templates */}
         <div className="mt-3">
-          <p className="text-xs text-gray-400 mb-2">Quick templates:</p>
+          <p className="text-xs text-gray-400 mb-2">Quick templates (click to use, then customise):</p>
           <div className="flex flex-wrap gap-2">
             {[
-              'Dear Parent, first term fees are now due. Please make payment promptly to avoid penalty.',
-              'Dear Parent, your ward has an outstanding fee balance. Kindly settle at the bursar\'s office.',
-              'Dear Parent, reminder: school reopens on Monday. Ensure fees are paid before resumption.',
+              { label: 'Personalised balance', text: 'Dear Parent, your ward <<name>> has an outstanding fee balance of <<bal>>. Kindly settle at the bursar\'s office. - <<school>>' },
+              { label: 'Fees due', text: 'Dear Parent, first term fees are now due. Please make payment promptly to avoid penalty. - <<school>>' },
+              { label: 'Reminder', text: 'Dear Parent, reminder: school reopens on Monday. Ensure <<name>>\'s fees are paid before resumption.' },
             ].map((t, i) => (
-              <button key={i} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition"
-                onClick={() => setMessage(t)}>
-                Template {i + 1}
+              <button key={i} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2.5 py-1 rounded transition"
+                onClick={() => setMessage(t.text)}>
+                {t.label}
               </button>
             ))}
           </div>

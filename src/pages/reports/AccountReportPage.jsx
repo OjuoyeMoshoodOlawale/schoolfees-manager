@@ -124,7 +124,7 @@ export default function AccountReportPage() {
       </tr>`).join('')
       const methodRows = byMethod.map(r => `<tr style="border-bottom:1px solid #e5e7eb">
         <td style="padding:6px 10px;text-transform:uppercase;font-weight:600">${r.payment_method}</td>
-        <td style="text-align:center;padding:6px 10px">${r.n}</td>
+        <td style="text-align:center;padding:6px 10px">${r.count}</td>
         <td style="text-align:right;padding:6px 10px;color:#059669;font-weight:bold">${fmtN(r.total)}</td>
       </tr>`).join('')
       const html = `<div style="font-family:Arial,sans-serif;max-width:750px;margin:0 auto;padding:20px">
@@ -247,9 +247,9 @@ export default function AccountReportPage() {
               { key: 'total_billed',label: 'Total Billed',    right: true, render: v => fmt(v) },
               { key: 'total_paid',  label: 'Total Collected', right: true, render: v => fmt(v) },
               { key: 'balance',     label: 'Balance',         right: true,
-                render: (_, row) => (
-                  <span className={Number(row.total_billed) - Number(row.total_paid) > 0 ? 'text-red-600' : 'text-emerald-600'}>
-                    {fmt(Number(row.total_billed) - Number(row.total_paid))}
+                render: (v, row) => (
+                  <span className={Number(row.balance) > 0 ? 'text-red-600' : 'text-emerald-600'}>
+                    {fmt(Number(row.balance))}
                   </span>
                 )
               },

@@ -434,10 +434,28 @@ module.exports = function registerCommunicationHandlers() {
   ipcMain.handle('sms:bulk-send', async (_, { recipients, message }) => {
     const db       = getDb()
     const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+    const currency = settings?.currency_symbol || '₦'
     const counts   = { sent: 0, failed: 0, errors: [] }
+
+    // Per-recipient personalisation. Supported placeholders (case-insensitive):
+    //   <<name>>    parent/ward name        <<bal>>  outstanding balance
+    //   <<school>>  school name             <<first>> first name
+    const fillTemplate = (tpl, r) => {
+      const bal = r.balance != null
+        ? currency + Number(r.balance).toLocaleString('en-NG', { minimumFractionDigits: 2 })
+        : ''
+      return String(tpl)
+        .replace(/<<\s*name\s*>>/gi,   r.name || 'Parent')
+        .replace(/<<\s*first\s*>>/gi,  r.first_name || r.name || '')
+        .replace(/<<\s*bal\s*>>/gi,    bal)
+        .replace(/<<\s*balance\s*>>/gi, bal)
+        .replace(/<<\s*school\s*>>/gi, settings?.school_name || 'the school')
+    }
+
     for (const r of recipients) {
-      const result = await sendSms(settings, r.phone, message)
-      logSms(db, { phone: r.phone, student_id: r.student_id, message, result })
+      const personalised = fillTemplate(message, r)
+      const result = await sendSms(settings, r.phone, personalised)
+      logSms(db, { phone: r.phone, student_id: r.student_id, message: personalised, result })
       if (result.ok) counts.sent++
       else { counts.failed++; counts.errors.push(`${r.name}: ${result.error}`) }
     }

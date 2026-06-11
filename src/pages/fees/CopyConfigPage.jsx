@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Copy, History, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { Copy, History, AlertCircle, AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { PageHeader, Spinner, Confirm } from '../../components/ui'
 import { format } from 'date-fns'
 
@@ -99,7 +99,26 @@ export default function CopyConfigPage() {
 
   useEffect(() => { if (tab === 'log') loadLog() }, [tab])
 
-  const canCopy = fromTerm && fromClass && toTerm && toClass && fromCount > 0
+  // ── Frontend forward-only guard (mirrors the backend) ─────────────────────
+  const TERM_RANK = { 'First Term': 1, 'Second Term': 2, 'Third Term': 3 }
+  const orderKey = (sessName, termName) => `${sessName || ''}#${TERM_RANK[termName] || 0}`
+  const fromKey = orderKey(
+    sessions.find(s => s.id === Number(fromSession))?.name,
+    fromTerms.find(t => t.id === Number(fromTerm))?.name
+  )
+  const toKey = orderKey(
+    sessions.find(s => s.id === Number(toSession))?.name,
+    toTerms.find(t => t.id === Number(toTerm))?.name
+  )
+  const sameTarget = fromTerm && toTerm && Number(fromTerm) === Number(toTerm) && Number(fromClass) === Number(toClass)
+  const goingBackward = fromTerm && toTerm && fromSession && toSession && toKey < fromKey
+  const sameTermDiffClassOk = fromTerm && toTerm && toKey === fromKey && Number(fromClass) !== Number(toClass)
+  let orderError = ''
+  if (sameTarget) orderError = 'Source and destination are identical — choose a different term or class.'
+  else if (goingBackward) orderError = 'You can only copy forward — the destination term cannot be earlier than the source.'
+  else if (fromTerm && toTerm && toKey === fromKey && !sameTermDiffClassOk) orderError = 'Choose a later term, or a different class within the same term.'
+
+  const canCopy = fromTerm && fromClass && toTerm && toClass && fromCount > 0 && !orderError
 
   const doCopy = async () => {
     setCopying(true)
@@ -189,6 +208,12 @@ export default function CopyConfigPage() {
             </div>
 
             {/* Options */}
+            {orderError && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-sm text-amber-800">
+                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                <span>{orderError}</span>
+              </div>
+            )}
             <div className="mt-5 pt-5 border-t border-gray-200 flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
                 <input type="checkbox" className="w-4 h-4 accent-blue-600"

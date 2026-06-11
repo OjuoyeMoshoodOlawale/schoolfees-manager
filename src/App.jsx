@@ -13,6 +13,7 @@ import ImportDataPage from './pages/settings/ImportDataPage'
 import ActivationScreen from './pages/auth/ActivationScreen'
 import LoginScreen      from './pages/auth/LoginScreen'
 import SetupWizard      from './pages/auth/SetupWizard'
+import { WebAutomateMark } from './components/WebAutomateMark'
 
 // Main pages
 import Dashboard          from './pages/Dashboard'
@@ -75,13 +76,10 @@ function AuthGate() {
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center">
         <div className="text-center space-y-5">
           {/* Branded app mark */}
-          <div className="w-20 h-20 mx-auto rounded-2xl bg-blue-600 flex items-center justify-center shadow-2xl relative">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-            </svg>
+          <div className="w-20 h-20 mx-auto flex items-center justify-center relative">
+            <WebAutomateMark size={80} className="rounded-2xl shadow-2xl" />
             {/* Spinning ring around the mark */}
-            <svg viewBox="0 0 80 80" className="absolute -inset-1 w-[88px] h-[88px]">
+            <svg viewBox="0 0 80 80" className="absolute -inset-1 w-[92px] h-[92px]">
               <circle cx="40" cy="40" r="38" stroke="#3b82f6" strokeWidth="3" strokeOpacity="0.15" fill="none"/>
               <path d="M40 2 A38 38 0 0 1 78 40" stroke="#60a5fa" strokeWidth="3" strokeLinecap="round" fill="none"
                 style={{ transformOrigin: '40px 40px', animation: 'spin 1s linear infinite' }}/>
@@ -98,9 +96,7 @@ function AuthGate() {
           <div className="flex items-center gap-2 text-slate-500 text-xs">
             <span>Powered by</span>
             <span className="flex items-center gap-1.5 font-semibold text-slate-300">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
+              <WebAutomateMark size={14} />
               webAutomate Nigeria
             </span>
           </div>
@@ -158,6 +154,25 @@ function MainApp() {
         )
       } else {
         toast.error(`Automatic backup failed: ${data.error || 'unknown error'}`, { autoClose: 8000 })
+      }
+    })
+    return off
+  }, [])
+
+  // Notify when an auto-sent receipt (SMS/Email) succeeds or fails after posting
+  useEffect(() => {
+    if (!window.api?.onReceiptAutoSent) return
+    const off = window.api.onReceiptAutoSent(({ receipt_number, sms, email }) => {
+      const ok = [], failed = []
+      if (sms)   (sms.ok   ? ok : failed).push('SMS')
+      if (email) (email.ok ? ok : failed).push('Email')
+      if (ok.length && !failed.length) {
+        toast.success(`${ok.join(' & ')} receipt sent for ${receipt_number}.`, { autoClose: 4000 })
+      } else if (ok.length && failed.length) {
+        toast.warn(`${receipt_number}: ${ok.join(' & ')} sent, but ${failed.join(' & ')} failed. You can resend from Payment History.`, { autoClose: 7000 })
+      } else if (failed.length) {
+        const reason = (email && !email.ok && email.error) || (sms && !sms.ok && sms.error) || 'check settings'
+        toast.error(`${receipt_number}: ${failed.join(' & ')} not sent (${reason}). Resend from Payment History.`, { autoClose: 7000 })
       }
     })
     return off

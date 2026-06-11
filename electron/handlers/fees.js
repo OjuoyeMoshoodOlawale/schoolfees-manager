@@ -185,6 +185,21 @@ ipcMain.handle('bill-config:delete', (_, id) => {
 
 ipcMain.handle('bill-config:copy', (_, { from_term_id, from_class_id, to_term_id, to_class_id, overwrite = false }) => {
   const db = getDb()
+
+  // ── Guard: never copy onto itself, and only copy FORWARD in time ──────────
+  const { compareTerms } = require('../lib/termOrder')
+  if (Number(from_term_id) === Number(to_term_id) && Number(from_class_id) === Number(to_class_id)) {
+    throw new Error('Source and destination are identical. Choose a different term or class to copy into.')
+  }
+  const cmp = compareTerms(db, from_term_id, to_term_id)
+  if (cmp === null) throw new Error('Could not determine the term order. Please reselect the terms.')
+  if (cmp === 0 && Number(from_class_id) === Number(to_class_id)) {
+    throw new Error('You cannot copy a term/class onto itself.')
+  }
+  if (cmp > 0) {
+    throw new Error('You can only copy fee configuration forward — the destination term cannot be earlier than the source term.')
+  }
+
   const source = db.prepare('SELECT * FROM bill_config WHERE term_id=? AND class_id=?').all([from_term_id, from_class_id])
   if (!source.length) throw new Error('No bill configurations found for the source term and class.')
   let inserted = 0, skipped = 0

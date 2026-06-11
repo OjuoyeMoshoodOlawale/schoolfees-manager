@@ -99,11 +99,43 @@ export default function CommunicationsLogPage() {
   const logs = tab === 'sms' ? smsLogs : emlLogs
   const filtered = filter === 'all' ? logs : logs.filter(l => l.status === filter)
   const failedCount = (tab === 'sms' ? smsLogs : emlLogs).filter(l => l.status === 'failed').length
+  const [resendingAll, setResendingAll] = useState(false)
+
+  // Resend every failed message in the current tab, one at a time
+  const resendAllFailed = async () => {
+    const failed = (tab === 'sms' ? smsLogs : emlLogs).filter(l => l.status === 'failed')
+    if (!failed.length) return
+    setResendingAll(true)
+    let ok = 0, fail = 0
+    try {
+      for (const log of failed) {
+        try {
+          const r = tab === 'sms'
+            ? await window.api.smsResend({ log_id: log.id })
+            : await window.api.emailResend({ log_id: log.id })
+          if (r.ok) ok++; else fail++
+        } catch { fail++ }
+      }
+      toast[fail === 0 ? 'success' : 'warn'](`Resent ${ok} of ${failed.length}${fail ? ` — ${fail} still failed` : ''}`)
+      await load()
+    } finally {
+      setResendingAll(false)
+    }
+  }
 
   return (
     <div>
       <PageHeader title="Communications Log" subtitle="View sent, failed, and pending SMS and email notifications. Resend or fix contact details."
-        actions={<button className="btn-secondary btn btn-sm" onClick={load}><RefreshCw size={14}/> Refresh</button>}
+        actions={
+          <div className="flex gap-2">
+            {failedCount > 0 && (
+              <button className="btn btn-sm bg-amber-500 text-white hover:bg-amber-600" onClick={resendAllFailed} disabled={resendingAll}>
+                <RefreshCw size={14} className={resendingAll ? 'animate-spin' : ''}/> {resendingAll ? 'Resending…' : `Resend All Failed (${failedCount})`}
+              </button>
+            )}
+            <button className="btn-secondary btn btn-sm" onClick={load}><RefreshCw size={14}/> Refresh</button>
+          </div>
+        }
       />
 
       {failedCount > 0 && (
