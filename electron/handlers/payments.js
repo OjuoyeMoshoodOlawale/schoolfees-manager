@@ -129,6 +129,7 @@ safeHandle('payments:post', (_, data) => {
             body: '', result: { ok: false, error: 'Student has no parent email' } })
         } else {
           const html = buildReceiptHtml({ settings, student, termRow, classRow, balance,
+            totalBilled: Number(totalBilled), totalPaid: Number(totalPaid),
             receipt_number, amount_paid: amt, payment_date, payment_method, reference })
           const result = await sendEmail(settings, {
             to: student.parent_email,
@@ -210,6 +211,40 @@ ipcMain.handle('payments:receipt-data', (_, id) => {
   const allPayments = db.prepare('SELECT COALESCE(SUM(amount_paid),0) as t FROM payments WHERE student_id=? AND term_id=?')
     .get([payment.student_id, payment.term_id])
   return { payment, school, bills, totalBilled, totalPaid: allPayments.t }
+})
+
+// ── Bulk receipt data — for printing many receipts at once (one per page) ─────
+// Accepts an array of payment IDs and returns each payment with its student's
+// billed/paid totals so every receipt shows the correct outstanding balance.
+ipcMain.handle('payments:bulk-receipt-data', (_, { payment_ids = [] } = {}) => {
+  const db = getDb()
+  const school = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+  const ids = (payment_ids || []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500)
+  if (!ids.length) return { school, receipts: [] }
+
+  const getPayment = db.prepare(`SELECT p.*, s.first_name, s.last_name, s.reg_number, s.parent_name,
+    c.name as class_name, t.name as term_name, ses.name as session_name
+    FROM payments p
+    JOIN students s ON s.id=p.student_id
+    JOIN terms t ON t.id=p.term_id
+    JOIN sessions ses ON ses.id=t.session_id
+    LEFT JOIN student_status ss ON ss.student_id=p.student_id AND ss.term_id=p.term_id
+    LEFT JOIN classes c ON c.id=ss.class_id
+    WHERE p.id=?`)
+  const getBilled = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM student_bills
+    WHERE student_id=? AND term_id=? AND status NOT IN ('waived','frozen')`)
+  const getPaid = db.prepare(`SELECT COALESCE(SUM(amount_paid),0) as t FROM payments
+    WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid>0`)
+
+  const receipts = []
+  for (const id of ids) {
+    const payment = getPayment.get([id])
+    if (!payment) continue
+    const totalBilled = Number(getBilled.get([payment.student_id, payment.term_id])?.t || 0)
+    const totalPaid   = Number(getPaid.get([payment.student_id, payment.term_id])?.t || 0)
+    receipts.push({ payment, totalBilled, totalPaid })
+  }
+  return { school, receipts }
 })
 
 

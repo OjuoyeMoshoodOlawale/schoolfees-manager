@@ -133,83 +133,126 @@ function logEmail(db, { email, student_id, subject, body, result }) {
       result.ok ? '' : (result.error||'Unknown error')])
 }
 
-// ── Build receipt HTML — matches PaymentsPage ReceiptModal styling ───────────
+// ── Amount in words (Naira) — standard on Nigerian receipts ──────────────────
+function amountInWords(n) {
+  n = Math.abs(Math.round(Number(n) || 0))
+  if (n === 0) return 'Zero Naira Only'
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve',
+    'Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen']
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety']
+  const below1000 = x => {
+    let s = ''
+    if (x >= 100) { s += ones[Math.floor(x/100)] + ' Hundred'; x %= 100; if (x) s += ' and ' }
+    if (x >= 20)  { s += tens[Math.floor(x/10)]; x %= 10; if (x) s += '-' + ones[x] }
+    else if (x)   { s += ones[x] }
+    return s
+  }
+  const scales = [[1e9,'Billion'],[1e6,'Million'],[1e3,'Thousand'],[1,'']]
+  let words = []
+  for (const [val, name] of scales) {
+    if (n >= val) {
+      const chunk = Math.floor(n / val); n %= val
+      words.push(below1000(chunk) + (name ? ' ' + name : ''))
+    }
+  }
+  return words.join(', ') + ' Naira Only'
+}
+
+// ── Build receipt HTML — standard itemized receipt (email + shares styling
+//    philosophy with the in-app print receipt). Shows Total Billed, Total Paid,
+//    This Payment, and Outstanding Balance, plus amount in words. ──────────────
 function buildReceiptHtml({ settings, student, payment, termRow, classRow, balance, receipt_number,
-  amount_paid, payment_date, payment_method, reference }) {
+  amount_paid, payment_date, payment_method, reference, totalBilled = null, totalPaid = null }) {
   const currency = settings.currency_symbol || '₦'
   const fmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 })
   const schoolName = settings.school_name || 'SchoolFees Manager'
   const isReversal = Number(amount_paid) < 0
+  const paid = Math.abs(Number(amount_paid))
 
   const logoHtml = settings.logo_path
-    ? `<img src="cid:school_logo" style="max-height:56px;max-width:140px;display:block;margin:0 auto 10px;object-fit:contain;" alt="${schoolName}"/>`
+    ? `<img src="cid:school_logo" style="max-height:60px;max-width:150px;display:block;margin:0 auto 8px;object-fit:contain;" alt="${schoolName}"/>`
     : ''
 
-  const rows = [
-    ['Student',    `${student.last_name || ''} ${student.first_name || ''}`.trim()],
-    ['Reg #',      student.reg_number || '—'],
-    ['Class',      classRow?.name || '—'],
-    ['Term',       termRow ? `${termRow.name}, ${termRow.session_name}` : '—'],
-    ['Date',       payment_date],
-    ['Method',     String(payment_method||'').toUpperCase()],
+  const addressLine = [settings.address, settings.phone, settings.email].filter(Boolean).join(' &bull; ')
+
+  const infoRows = [
+    ['Received From', student.parent_name || `Parent/Guardian of ${student.first_name || ''}`],
+    ['Student',       `${student.last_name || ''} ${student.first_name || ''}`.trim()],
+    ['Reg. Number',   student.reg_number || '—'],
+    ['Class',         classRow?.name || '—'],
+    ['Term / Session',termRow ? `${termRow.name}, ${termRow.session_name}` : '—'],
+    ['Payment Date',  payment_date],
+    ['Payment Method',String(payment_method||'').toUpperCase()],
     reference ? ['Reference', reference] : null,
   ].filter(Boolean)
+
+  // Account summary — only rows we have data for
+  const summaryRows = []
+  if (totalBilled !== null) summaryRows.push(['Total Fees Billed (this term)', fmt(totalBilled), false])
+  if (totalPaid   !== null) summaryRows.push(['Total Paid to Date', fmt(totalPaid), false])
+  summaryRows.push([isReversal ? 'Amount Reversed' : 'Amount Paid (this receipt)', fmt(paid), true])
+  if (!isReversal) summaryRows.push(['Outstanding Balance', balance > 0 ? fmt(balance) : fmt(0) + ' — FULLY PAID', true])
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;background:#f1f5f9;padding:24px}
-  .card{background:#fff;border-radius:16px;max-width:480px;margin:0 auto;
-        box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden}
-  .header{text-align:center;padding:24px 24px 16px;border-bottom:1px solid #f1f5f9}
-  .school{font-size:15pt;font-weight:bold;text-transform:uppercase;color:#1e293b;letter-spacing:.02em}
-  .title{font-size:11pt;font-weight:700;margin-top:4px;color:#374151}
-  .rcpt{font-size:9pt;color:#9ca3af;margin-top:2px}
-  .rows{padding:16px 24px}
-  .row{display:flex;justify-content:space-between;align-items:center;
-       padding:7px 0;border-bottom:1px solid #f8fafc;font-size:10pt}
-  .row:last-child{border-bottom:none}
-  .lbl{color:#9ca3af}
-  .val{font-weight:600;color:#111827;text-align:right}
-  .amt-box{margin:0 16px 12px;padding:16px;background:#eff6ff;
-           border:1.5px solid #bfdbfe;border-radius:10px;text-align:center}
-  .amt-lbl{font-size:9pt;color:#6b7280}
-  .amt-val{font-size:22pt;font-weight:bold;color:#1d4ed8;margin-top:4px}
-  .bal-box{margin:0 16px 16px;padding:12px;border-radius:10px;text-align:center}
-  .bal-paid{background:#f0fdf4;border:1.5px solid #bbf7d0}
-  .bal-due{background:#fef2f2;border:1.5px solid #fecaca}
-  .bal-lbl{font-size:9pt;color:#6b7280}
-  .bal-val-paid{font-size:14pt;font-weight:bold;color:#16a34a;margin-top:3px}
-  .bal-val-due{font-size:14pt;font-weight:bold;color:#dc2626;margin-top:3px}
-  .footer{text-align:center;padding:12px 24px 16px;font-size:9pt;color:#9ca3af;
-          border-top:1px solid #f1f5f9}
+  body{font-family:Georgia,'Times New Roman',serif;background:#f1f5f9;padding:24px;color:#1e293b}
+  .card{background:#fff;max-width:560px;margin:0 auto;border:1px solid #cbd5e1;
+        box-shadow:0 4px 24px rgba(0,0,0,.08)}
+  .inner{border:2px solid #1e293b;margin:8px;padding:0}
+  .header{text-align:center;padding:20px 24px 14px;border-bottom:2px solid #1e293b}
+  .school{font-size:16pt;font-weight:bold;text-transform:uppercase;letter-spacing:.04em}
+  .addr{font-size:8.5pt;color:#64748b;margin-top:3px;font-family:Arial,sans-serif}
+  .doc-title{display:flex;justify-content:space-between;align-items:center;
+             padding:10px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;
+             font-family:Arial,sans-serif}
+  .doc-title .t{font-size:11pt;font-weight:bold;letter-spacing:.08em;color:${isReversal ? '#b91c1c' : '#1e293b'}}
+  .doc-title .no{font-size:9.5pt;font-family:'Courier New',monospace;font-weight:bold}
+  table{width:100%;border-collapse:collapse;font-family:Arial,sans-serif}
+  .info td{padding:6px 20px;font-size:9.5pt;border-bottom:1px dotted #e2e8f0}
+  .info td.l{color:#64748b;width:38%}
+  .info td.v{font-weight:600;text-align:right}
+  .sum-head{padding:8px 20px 4px;font-size:8.5pt;font-weight:bold;color:#64748b;
+            text-transform:uppercase;letter-spacing:.06em;font-family:Arial,sans-serif}
+  .sum td{padding:7px 20px;font-size:10pt;border-bottom:1px solid #e2e8f0}
+  .sum td.v{text-align:right;font-weight:600}
+  .sum tr.hl td{background:${isReversal ? '#fef2f2' : '#eff6ff'};font-weight:bold;font-size:11pt;
+               border-top:2px solid #1e293b;border-bottom:2px solid #1e293b}
+  .words{padding:10px 20px;font-size:9pt;font-style:italic;color:#334155;
+         border-bottom:1px solid #e2e8f0}
+  .words b{font-style:normal}
+  .sign{display:flex;justify-content:space-between;padding:26px 20px 8px;font-family:Arial,sans-serif}
+  .sign div{width:42%;border-top:1px solid #94a3b8;text-align:center;font-size:8.5pt;color:#64748b;padding-top:4px}
+  .footer{text-align:center;padding:10px 20px 14px;font-size:8.5pt;color:#94a3b8;font-family:Arial,sans-serif}
 </style></head><body>
-<div class="card">
+<div class="card"><div class="inner">
   <div class="header">
     ${logoHtml}
     <div class="school">${schoolName}</div>
-    <div class="title">${isReversal ? 'REVERSAL NOTICE' : 'PAYMENT RECEIPT'}</div>
-    <div class="rcpt">${receipt_number}</div>
+    ${addressLine ? `<div class="addr">${addressLine}</div>` : ''}
   </div>
-  <div class="rows">
-    ${rows.map(([l,v]) => `<div class="row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('')}
+  <div class="doc-title">
+    <span class="t">${isReversal ? 'PAYMENT REVERSAL NOTICE' : 'OFFICIAL PAYMENT RECEIPT'}</span>
+    <span class="no">No. ${receipt_number}</span>
   </div>
-  <div class="amt-box">
-    <div class="amt-lbl">${isReversal ? 'Amount Reversed' : 'Amount Paid'}</div>
-    <div class="amt-val">${fmt(Math.abs(Number(amount_paid)))}</div>
+  <table class="info"><tbody>
+    ${infoRows.map(([l,v]) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`).join('')}
+  </tbody></table>
+  <div class="sum-head">Account Summary</div>
+  <table class="sum"><tbody>
+    ${summaryRows.map(([l,v,hl]) => `<tr${hl ? ' class="hl"' : ''}><td>${l}</td><td class="v">${v}</td></tr>`).join('')}
+  </tbody></table>
+  <div class="words"><b>Amount in words:</b> ${amountInWords(paid)}</div>
+  <div class="sign">
+    <div>Bursar / Cashier</div>
+    <div>Authorised Signature</div>
   </div>
-  ${!isReversal ? `
-  <div class="bal-box ${balance > 0 ? 'bal-due' : 'bal-paid'}">
-    <div class="bal-lbl">${balance > 0 ? 'Outstanding Balance' : 'Account Status'}</div>
-    <div class="${balance > 0 ? 'bal-val-due' : 'bal-val-paid'}">${balance > 0 ? fmt(balance) + ' remaining' : '&#10003; Fully Paid'}</div>
-  </div>` : ''}
   <div class="footer">
-    ${settings.receipt_footer || 'Thank you for your payment.'}
-    ${settings.phone ? `<br/>${settings.phone}` : ''}
-    ${settings.email ? ` &bull; ${settings.email}` : ''}
+    ${settings.receipt_footer || 'Thank you for your payment.'}<br/>
+    This is a computer-generated receipt issued by ${schoolName}.
   </div>
-</div>
+</div></div>
 </body></html>`
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,6 +413,7 @@ module.exports = function registerCommunicationHandlers() {
     const html        = buildReceiptHtml({ settings, student: payment,
       termRow: { name: payment.term_name, session_name: payment.session_name },
       classRow: { name: payment.class_name }, balance,
+      totalBilled: Number(totalBilled), totalPaid: Number(totalPaid),
       receipt_number: payment.receipt_number, amount_paid: payment.amount_paid,
       payment_date: payment.payment_date, payment_method: payment.payment_method,
       reference: payment.reference })

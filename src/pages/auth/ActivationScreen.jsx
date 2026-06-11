@@ -1,12 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { GraduationCap, Key, Wifi, WifiOff, CheckCircle2, Loader } from 'lucide-react'
+import { GraduationCap, Key, Wifi, WifiOff, CheckCircle2, Loader, Copy, Monitor } from 'lucide-react'
 import { Field } from '../../components/ui'
 
 export default function ActivationScreen({ onActivated }) {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(null)
+  const [machineId, setMachineId] = useState('')
+  const [copied, setCopied]   = useState(false)
+
+  useEffect(() => {
+    window.api?.getMachineId?.().then(id => setMachineId(id || '')).catch(() => {})
+  }, [])
+
+  const copyMachineId = async () => {
+    try {
+      await navigator.clipboard.writeText(machineId)
+      setCopied(true)
+      toast.success('Machine ID copied — send it to your vendor')
+      setTimeout(() => setCopied(false), 2500)
+    } catch { toast.error('Could not copy — select and copy manually') }
+  }
 
   const { register, handleSubmit, formState: { errors } } = useForm()
 
@@ -65,20 +80,40 @@ export default function ActivationScreen({ onActivated }) {
             </div>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Machine ID — client sends this to the vendor to get a key */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1.5">
+                  <Monitor size={12} className="text-blue-600" /> This Computer's Machine ID
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[10px] font-mono text-gray-700 bg-white border border-gray-200 rounded px-2 py-1.5 break-all select-all">
+                    {machineId || 'Loading…'}
+                  </code>
+                  <button type="button" onClick={copyMachineId} disabled={!machineId}
+                    className="btn btn-sm btn-secondary flex-shrink-0"
+                    title="Copy Machine ID">
+                    {copied ? <CheckCircle2 size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5">
+                  Send this ID to your vendor — your activation key is generated for this computer only.
+                </p>
+              </div>
+
               <Field label="School Name" required error={errors.school_name?.message}>
                 <input className="form-input" placeholder="e.g. Bright Future Academy"
                   {...register('school_name', { required: 'School name is required' })} />
               </Field>
 
               <Field label="Activation Key" required error={errors.license_key?.message}
-                hint="Format: XXXX-XXXX-XXXX-XXXX — provided by your sales agent">
+                hint="Format: SFMU-XXXX-XXXX-XXXX-XXXX — provided by your sales agent">
                 <input
                   className="form-input font-mono tracking-widest text-center text-lg uppercase"
-                  placeholder="XXXX-XXXX-XXXX-XXXX"
-                  maxLength={19}
+                  placeholder="SFMU-XXXX-XXXX-XXXX-XXXX"
+                  maxLength={24}
                   {...register('license_key', {
                     required: 'Activation key is required',
-                    pattern: { value: /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, message: 'Key must be in format XXXX-XXXX-XXXX-XXXX' },
+                    pattern: { value: /^[A-Z0-9]{4}(-[A-Z0-9]{4}){3,4}$/i, message: 'Key must be in format SFMU-XXXX-XXXX-XXXX-XXXX' },
                     setValueAs: v => v.trim().toUpperCase(),
                   })}
                 />

@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('api', {
   deletePayment:      (id)   => ipcRenderer.invoke('payments:delete', id),
   reversePayment:     (d)    => ipcRenderer.invoke('payments:reverse', d),
   getReceiptData:     (id)   => ipcRenderer.invoke('payments:receipt-data', id),
+  bulkReceiptData:    (d)    => ipcRenderer.invoke('payments:bulk-receipt-data', d),
   listDebtors:        (f)    => ipcRenderer.invoke('debtors:list', f),
 
   // ── Reports

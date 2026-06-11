@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, Menu } = require('electron')
 const path = require('path')
 const fs   = require('fs')
+const os   = require('os')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -138,9 +139,15 @@ ipcMain.handle('app:set-content-protection', (_, enabled) => {
   return { ok: true }
 })
 
-// ─── Clean Print — renders pure HTML in a hidden window, no app chrome ─────────
-ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
-  // Convert any localfile:// image src to inline base64 so the data: URL context can render them
+// ─── Clean Print — plain PRINT PREVIEW window by default ───────────────────────
+// Every print in the app goes through here. Default behaviour: open a visible
+// preview window showing exactly what will print, with a Print / Close toolbar
+// (hidden on paper via @media print). Pass { direct:true } or { silent:true }
+// to skip the preview and print immediately (e.g. thermal receipt printers).
+// HTML is loaded from a temp file (not a data: URL) so large bulk jobs with
+// embedded base64 logos never hit URL length limits.
+ipcMain.handle('app:print-html', async (_, { html, silent = false, direct = false, title = 'Print Preview' }) => {
+  // Convert any localfile:// image src to inline base64 so the preview window can render them
   let processedHtml = html
   const imgRegex = /src="localfile:\/\/([^"]+)"/g
   let match
@@ -160,31 +167,91 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false }) => {
     } catch { /* skip — image just won't show */ }
   }
 
+  const showPreview = !silent && !direct
+
+  const toolbarHtml = showPreview ? `
+    <div class="sf-print-toolbar">
+      <span class="sf-pt-title">🖨️ Print Preview</span>
+      <span class="sf-pt-hint">Review the document, then click Print to send it to your printer.</span>
+      <div class="sf-pt-actions">
+        <button class="sf-pt-print" onclick="window.print()">Print</button>
+        <button class="sf-pt-close" onclick="window.close()">Close</button>
+      </div>
+    </div>
+    <div class="sf-print-paper">` : ''
+  const toolbarClose = showPreview ? '</div>' : ''
+
+  const fullHtml = `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"/>
+    <title>${title}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family: Arial, sans-serif; font-size: 12pt; background: ${showPreview ? '#525659' : 'white'}; }
+      @page { margin: 1cm; }
+      ${showPreview ? `
+      .sf-print-toolbar {
+        position: sticky; top: 0; z-index: 9999;
+        display: flex; align-items: center; gap: 12px;
+        background: #1e293b; color: #fff; padding: 10px 16px;
+        font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+      }
+      .sf-pt-title { font-weight: 700; white-space: nowrap; }
+      .sf-pt-hint  { color: #94a3b8; font-size: 11.5px; flex: 1; }
+      .sf-pt-actions { display: flex; gap: 8px; }
+      .sf-pt-print, .sf-pt-close {
+        border: 0; border-radius: 6px; padding: 7px 18px;
+        font-size: 13px; font-weight: 600; cursor: pointer;
+      }
+      .sf-pt-print { background: #2563eb; color: #fff; }
+      .sf-pt-print:hover { background: #1d4ed8; }
+      .sf-pt-close { background: #475569; color: #fff; }
+      .sf-pt-close:hover { background: #334155; }
+      .sf-print-paper {
+        background: #fff; max-width: 880px; margin: 16px auto 32px;
+        padding: 24px; box-shadow: 0 4px 18px rgba(0,0,0,.4); min-height: 400px;
+      }
+      @media print {
+        body { background: white; }
+        .sf-print-toolbar { display: none !important; }
+        .sf-print-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+      }` : ''}
+    </style>
+  </head><body>${toolbarHtml}${processedHtml}${toolbarClose}</body></html>`
+
+  // Write to a temp file — avoids data: URL size limits on bulk print jobs
+  const tmpFile = path.join(os.tmpdir(), `sf-print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`)
+  fs.writeFileSync(tmpFile, fullHtml, 'utf8')
+  const cleanupTmp = () => { try { fs.unlinkSync(tmpFile) } catch {} }
+
   return new Promise((resolve) => {
     const printWin = new BrowserWindow({
-      width: 800, height: 600,
-      show: false,
+      width: showPreview ? 980 : 800,
+      height: showPreview ? 760 : 600,
+      show: showPreview,
+      title,
+      autoHideMenuBar: true,
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     })
-    const fullHtml = `<!DOCTYPE html><html><head>
-      <meta charset="utf-8"/>
-      <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: Arial, sans-serif; font-size: 12pt; background: white; }
-        @page { margin: 1cm; }
-      </style>
-    </head><body>${processedHtml}</body></html>`
 
-    printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`)
-    printWin.webContents.once('did-finish-load', () => {
-      printWin.webContents.print(
-        { silent, printBackground: true, margins: { marginType: 'custom', top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 } },
-        (success, errorType) => {
-          printWin.destroy()
-          resolve({ ok: success, error: success ? null : errorType })
-        }
-      )
-    })
+    printWin.loadFile(tmpFile)
+
+    if (showPreview) {
+      // Preview mode: window stays open until the user prints/closes it
+      printWin.once('closed', cleanupTmp)
+      printWin.webContents.once('did-finish-load', () => resolve({ ok: true, preview: true }))
+    } else {
+      // Direct/silent mode: print immediately, no preview (thermal printers etc.)
+      printWin.webContents.once('did-finish-load', () => {
+        printWin.webContents.print(
+          { silent, printBackground: true, margins: { marginType: 'custom', top: 0.5, bottom: 0.5, left: 0.5, right: 0.5 } },
+          (success, errorType) => {
+            printWin.destroy()
+            cleanupTmp()
+            resolve({ ok: success, error: success ? null : errorType })
+          }
+        )
+      })
+    }
   })
 })
 

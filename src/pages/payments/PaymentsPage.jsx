@@ -10,7 +10,7 @@ import {
   PageHeader, DataTable, SearchInput,
   Confirm, Spinner, exportToExcel
 } from '../../components/ui'
-import { printCleanHtml } from '../../lib/utils'
+import { printCleanHtml, buildReceiptPrintHtml, buildBulkReceiptsHtml } from '../../lib/utils'
 
 const fmtD = d =>
   d ? new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
@@ -25,61 +25,7 @@ function ReceiptModal({ data, onClose, fmt, school }) {
   const balance = totalBilled - totalPaid
 
   const handlePrint = async () => {
-    const currency = school?.currency_symbol || '₦'
-    const fmtN = n => currency + Number(n||0).toLocaleString('en-NG',{minimumFractionDigits:2})
-    const isReversal = payment.amount_paid < 0
-    const rows = [
-      ['Student',   `${payment.last_name||''} ${payment.first_name||''}`.trim()],
-      ['Reg #',     payment.reg_number||'—'],
-      ['Class',     payment.class_name||'—'],
-      ['Term',      `${payment.term_name||''}, ${payment.session_name||''}`],
-      ['Date',      payment.payment_date],
-      ['Method',    (payment.payment_method||'').toUpperCase()],
-      ...(payment.reference ? [['Reference', payment.reference]] : []),
-    ]
-    const logoHtml = school?.logo_path
-      ? `<img src="localfile://${school.logo_path}" style="max-height:56px;max-width:140px;display:block;margin:0 auto 10px;object-fit:contain;"/>`
-      : ''
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;background:#f1f5f9;padding:24px}
-  .card{background:#fff;border-radius:16px;max-width:480px;margin:0 auto;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden}
-  .header{text-align:center;padding:24px 24px 16px;border-bottom:1px solid #f1f5f9}
-  .school{font-size:15pt;font-weight:bold;text-transform:uppercase;color:#1e293b}
-  .title{font-size:11pt;font-weight:700;margin-top:4px;color:#374151}
-  .rcpt{font-size:9pt;color:#9ca3af;margin-top:2px}
-  .row{display:flex;justify-content:space-between;padding:7px 20px;border-bottom:1px solid #f8fafc;font-size:10pt}
-  .lbl{color:#9ca3af}.val{font-weight:600;color:#111827}
-  .amt-box{margin:12px 16px;padding:16px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;text-align:center}
-  .amt-lbl{font-size:9pt;color:#6b7280}.amt-val{font-size:22pt;font-weight:bold;color:#1d4ed8;margin-top:4px}
-  .bal-paid{margin:0 16px 16px;padding:12px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;text-align:center}
-  .bal-due{margin:0 16px 16px;padding:12px;background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;text-align:center}
-  .bal-lbl{font-size:9pt;color:#6b7280}
-  .bal-paid .bal-val{font-size:14pt;font-weight:bold;color:#16a34a;margin-top:3px}
-  .bal-due .bal-val{font-size:14pt;font-weight:bold;color:#dc2626;margin-top:3px}
-  .footer{text-align:center;padding:12px 24px 16px;font-size:9pt;color:#9ca3af;border-top:1px solid #f1f5f9}
-</style></head><body>
-<div class="card">
-  <div class="header">
-    ${logoHtml}
-    <div class="school">${school?.school_name||'School'}</div>
-    <div class="title">${isReversal?'REVERSAL NOTICE':'PAYMENT RECEIPT'}</div>
-    <div class="rcpt">${payment.receipt_number}</div>
-  </div>
-  ${rows.map(([l,v])=>`<div class="row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('')}
-  <div class="amt-box">
-    <div class="amt-lbl">${isReversal?'Amount Reversed':'Amount Paid'}</div>
-    <div class="amt-val">${fmtN(Math.abs(payment.amount_paid))}</div>
-  </div>
-  ${!isReversal ? `
-  <div class="${balance>0?'bal-due':'bal-paid'}">
-    <div class="bal-lbl">${balance>0?'Outstanding Balance':'Account Status'}</div>
-    <div class="bal-val">${balance>0?fmtN(balance)+' remaining':'&#10003; Fully Paid'}</div>
-  </div>` : ''}
-  <div class="footer">${school?.receipt_footer||'Thank you for your payment.'}
-  ${school?.phone?`<br/>${school.phone}`:''}${school?.email?` &bull; ${school.email}`:''}</div>
-</div></body></html>`
+    const html = buildReceiptPrintHtml({ payment, school, totalBilled, totalPaid })
     await printCleanHtml(html)
   }
 
@@ -326,6 +272,7 @@ export default function PaymentsPage() {
   const [receiptData, setReceiptData]     = useState(null)
   const [deleteTarget, setDeleteTarget]   = useState(null)
   const [reverseTarget, setReverseTarget] = useState(null)
+  const [bulkPrinting, setBulkPrinting]   = useState(false)
 
   const load = useCallback(async () => {
     const [data, s] = await Promise.all([
@@ -400,6 +347,26 @@ export default function PaymentsPage() {
     return `${p.first_name} ${p.last_name} ${p.reg_number} ${p.receipt_number}`
       .toLowerCase().includes(q)
   })
+
+  // ── Bulk receipt printing — one receipt per page ─────────────────────────────
+  // Prints every visible (filtered) real payment: positive amount, not reversed.
+  const handleBulkPrint = async () => {
+    const printable = filtered.filter(p => p.amount_paid > 0 && p.is_reversed !== 1)
+    if (!printable.length) { toast.info('No printable receipts in the current list'); return }
+    setBulkPrinting(true)
+    try {
+      const { school: sch, receipts } = await window.api.bulkReceiptData({
+        payment_ids: printable.map(p => p.id),
+      })
+      if (!receipts?.length) { toast.error('Could not load receipt data'); return }
+      const html = buildBulkReceiptsHtml(receipts, sch || school)
+      await printCleanHtml(html)
+    } catch (e) {
+      toast.error(e.message || 'Bulk print failed')
+    } finally {
+      setBulkPrinting(false)
+    }
+  }
 
   const netTotal = filtered
     .reduce((s, p) => s + Number(p.amount_paid), 0)
@@ -496,6 +463,14 @@ export default function PaymentsPage() {
         subtitle={`${payments.length} records`}
         actions={
           <div className="flex gap-2">
+            <button
+              className="btn-secondary btn btn-sm"
+              onClick={handleBulkPrint}
+              disabled={bulkPrinting || !filtered.some(p => p.amount_paid > 0 && p.is_reversed !== 1)}
+              title="Print receipts for all payments in the current list — one per page"
+            >
+              <Printer size={14} /> {bulkPrinting ? 'Preparing…' : 'Print Receipts'}
+            </button>
             <button
               className="btn-secondary btn btn-sm"
               onClick={handleExport}

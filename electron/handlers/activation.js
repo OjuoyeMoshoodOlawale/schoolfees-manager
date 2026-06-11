@@ -34,16 +34,36 @@ ipcMain.handle('activation:status', () => {
 ipcMain.handle('activation:activate', async (_, { license_key, school_name }) => {
   try {
   const crypto = require('crypto')
-  const os     = require('os')
   const db     = getDb()
+  const { getMachineId, verifyActivationKey } = require('../lib/machineId')
 
   const key = license_key.trim().toUpperCase()
-  const machine_id = crypto.createHash('md5')
-    .update(os.hostname() + os.platform() + os.arch()).digest('hex')
+  const machine_id = getMachineId()
 
-  // ── Offline key validation ─────────────────────────────────────────────────
-  // Keys are HMAC-SHA256 derived — validated without a server connection.
-  // When your activation server is ready, online validation takes priority.
+  // ── Machine-bound key (primary, NovaPOS-style) ──────────────────────────────
+  // Key was generated for THIS machine's ID via HMAC — works fully offline.
+  const bound = verifyActivationKey(key)
+  if (bound) {
+    const existing = db.prepare('SELECT id FROM activation WHERE id=1').get()
+    const payload = [key, school_name, null, bound.max_students, bound.tier, machine_id]
+    if (existing) {
+      db.prepare(`UPDATE activation SET license_key=?,school_name=?,activated_at=datetime('now'),
+        expires_at=?,max_students=?,tier=?,machine_id=?,is_active=1 WHERE id=1`).run(payload)
+    } else {
+      db.prepare(`INSERT INTO activation (id,license_key,school_name,activated_at,expires_at,max_students,tier,machine_id,is_active)
+        VALUES (1,?,?,datetime('now'),?,?,?,?,1)`).run(payload)
+    }
+    db.prepare('UPDATE school_settings SET school_name=? WHERE id=1').run([school_name])
+    db.prepare("UPDATE app_state SET value='1' WHERE key='setup_complete'").run()
+    return {
+      ok: true, tier: bound.tier, max_students: bound.max_students, offline: true,
+      message: `${bound.label} license activated for this machine`
+    }
+  }
+
+  // ── Legacy offline keys (fallback) ─────────────────────────────────────────
+  // Pre-machine-binding keys already distributed to agents still work.
+  // New keys should be machine-bound (generated via scripts/gen-activation-key.js).
   const SECRET = 'SF_MASTER_SECRET_2025_OJUOYE'
 
   function makeKey(seed) {
@@ -175,9 +195,8 @@ ipcMain.handle('activation:activate', async (_, { license_key, school_name }) =>
 })
 
 ipcMain.handle('activation:get-machine-id', () => {
-  const os = require('os')
-  return require('crypto').createHash('md5')
-    .update(os.hostname() + os.platform() + os.arch()).digest('hex')
+  const { getMachineId } = require('../lib/machineId')
+  return getMachineId()
 })
 
 // ─── App State ───────────────────────────────────────────────────────────────
