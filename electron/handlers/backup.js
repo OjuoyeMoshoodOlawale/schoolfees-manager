@@ -1,151 +1,264 @@
-const { ipcMain, dialog } = require('electron')
+const { ipcMain, dialog, app } = require('electron')
 const fs   = require('fs')
 const path = require('path')
-const { closeDb, reopenDb, getDbPath } = require('../lib/database')
+const { closeDb, reopenDb, getDb, getDbPath } = require('../lib/database')
+const { deriveBackupKey, encryptDb, decryptBackup, validateSqliteBytes } = require('../lib/backupCrypto')
+
+// ─── Sync folder config (NovaPOS Google Drive method) ─────────────────────────
+// The user points to their Google Drive Desktop / OneDrive / Dropbox sync
+// folder on disk. Encrypted backups are COPIED there and the cloud client
+// does the actual syncing. No OAuth, no API keys, nothing to expire.
+function getSyncConfigPath() {
+  return path.join(path.dirname(getDbPath()), 'sync_folder.json')
+}
+function loadSyncConfig() {
+  try { return JSON.parse(fs.readFileSync(getSyncConfigPath(), 'utf8')) } catch { return null }
+}
+function saveSyncConfig(cfg) {
+  fs.writeFileSync(getSyncConfigPath(), JSON.stringify(cfg, null, 2))
+}
+
+// ─── System backup folder ──────────────────────────────────────────────────────
+function getBackupDir() {
+  const dir = path.join(path.dirname(getDbPath()), 'backups')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function pruneBackups(dir, prefix, ext, keep) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith(prefix) && f.endsWith(ext))
+      .map(f => ({ name: f, time: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.time - a.time)
+    files.slice(keep).forEach(f => { try { fs.unlinkSync(path.join(dir, f.name)) } catch {} })
+  } catch {}
+}
+
+// ─── Core backup: encrypt → system folder → copy to sync folder ───────────────
+// Exported so the nightly scheduler uses the EXACT same code path.
+function performEncryptedBackup({ prefix = 'schoolfees-backup' } = {}) {
+  const db        = getDb()
+  const key       = deriveBackupKey(db)
+  const dbPath    = getDbPath()
+  const backupDir = getBackupDir()
+  const ts        = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename  = `${prefix}-${ts}.sfenc`
+
+  const blob = encryptDb(dbPath, key)
+
+  // 1) System backup folder
+  const destPath = path.join(backupDir, filename)
+  fs.writeFileSync(destPath, blob)
+  pruneBackups(backupDir, prefix, '.sfenc', 30)
+
+  // 2) Copy to cloud sync folder (Google Drive Desktop etc.) if configured
+  let syncCopied = false, syncError = null
+  const cfg = loadSyncConfig()
+  if (cfg?.folder && cfg.enabled) {
+    try {
+      if (!fs.existsSync(cfg.folder)) throw new Error('Sync folder not found — is your cloud drive mounted?')
+      fs.writeFileSync(path.join(cfg.folder, filename), blob)
+      pruneBackups(cfg.folder, prefix, '.sfenc', 10)
+      saveSyncConfig({ ...cfg, lastSync: new Date().toISOString() })
+      syncCopied = true
+    } catch (e) { syncError = e.message }
+  }
+
+  // Persist metadata
+  try {
+    const exists = db.prepare("SELECT key FROM app_state WHERE key='last_backup_at'").get()
+    if (exists) db.prepare("UPDATE app_state SET value=? WHERE key='last_backup_at'").run([new Date().toISOString()])
+    else db.prepare("INSERT INTO app_state (key,value) VALUES ('last_backup_at',?)").run([new Date().toISOString()])
+  } catch {}
+
+  return { ok: true, path: destPath, filename, size: blob.length, syncCopied, syncError }
+}
 
 module.exports = function registerBackupHandlers() {
 
   ipcMain.handle('backup:get-db-path', () => getDbPath())
 
-  // ── Backup current DB to file ─────────────────────────────────────────────
-  ipcMain.handle('backup:local', async () => {
-    const dbPath = getDbPath()
-    const result = await dialog.showSaveDialog({
-      defaultPath: `schoolfees_backup_${new Date().toISOString().slice(0,10)}.db`,
-      filters: [{ name: 'Database Backup', extensions: ['db'] }]
-    })
-    if (result.canceled) return { ok: false }
+  // ── Backup Now — encrypted, to system folder + sync folder ─────────────────
+  ipcMain.handle('backup:now', async () => {
+    try { return performEncryptedBackup() }
+    catch (e) { return { ok: false, error: e.message } }
+  })
 
+  // ── Download encrypted backup (save-as: USB stick, another PC…) ────────────
+  ipcMain.handle('backup:local', async () => {
+    const result = await dialog.showSaveDialog({
+      title: 'Download Encrypted SchoolFees Backup',
+      defaultPath: `schoolfees-backup-${new Date().toISOString().slice(0,10)}.sfenc`,
+      filters: [{ name: 'SchoolFees Encrypted Backup', extensions: ['sfenc'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false }
     try {
-      fs.copyFileSync(dbPath, result.filePath)
+      const db   = getDb()
+      const blob = encryptDb(getDbPath(), deriveBackupKey(db))
+      fs.writeFileSync(result.filePath, blob)
       return { ok: true, path: result.filePath }
     } catch (e) {
       return { ok: false, error: e.message }
     }
   })
 
-  // ── Restore / Load a different DB file ────────────────────────────────────
+  // ── Restore — NovaPOS safety flow ───────────────────────────────────────────
+  // Nothing is written to disk until EVERY check passes AND the user confirms:
+  //   1. Pick file (.sfenc encrypted, or legacy plain .db)
+  //   2. Decrypt/read fully INTO MEMORY — zero disk writes
+  //   3. Validate SQLite magic bytes — reject garbage before touching anything
+  //   4. Native OS confirmation dialog with file details
+  //   5. Safety copy of current DB → close DB → write → verify byte count
+  //   6. App relaunches automatically — guarantees completely fresh DB handles
+  // The live database file is NEVER deleted. On any failure the safety copy
+  // is put back and the app keeps running on the original data.
   ipcMain.handle('backup:restore-local', async () => {
-    const result = await dialog.showOpenDialog({
-      title: 'Select Database File to Load',
-      filters: [{ name: 'SchoolFees Database', extensions: ['db'] }],
+    const pick = await dialog.showOpenDialog({
+      title: 'Select SchoolFees Backup to Restore',
+      filters: [
+        { name: 'SchoolFees Encrypted Backup', extensions: ['sfenc'] },
+        { name: 'Legacy SQLite Database',      extensions: ['db'] },
+        { name: 'All Backup Files',            extensions: ['sfenc', 'db'] },
+      ],
       properties: ['openFile']
     })
-    if (result.canceled) return { ok: false }
+    if (pick.canceled || !pick.filePaths[0]) return { ok: false, cancelled: true }
 
-    const sourcePath = result.filePaths[0]
-    const dbPath     = getDbPath()
+    const selectedFile = pick.filePaths[0]
+    const fileName     = path.basename(selectedFile)
+    let plaintext, formatLabel
 
-    // Validate the file is a SQLite database
+    // ── Decode/decrypt to memory only ─────────────────────────────────────────
     try {
-      const header = Buffer.alloc(16)
-      const fd = fs.openSync(sourcePath, 'r')
-      fs.readSync(fd, header, 0, 16, 0)
-      fs.closeSync(fd)
-      const magic = header.toString('utf8', 0, 16)
-      if (!magic.startsWith('SQLite format 3')) {
-        return { ok: false, error: 'The selected file is not a valid SQLite database.' }
+      if (fileName.toLowerCase().endsWith('.sfenc')) {
+        const db  = getDb()
+        const key = deriveBackupKey(db)
+        plaintext = decryptBackup(fs.readFileSync(selectedFile), key)
+        formatLabel = 'Encrypted (AES-256-GCM) — decryption verified ✓'
+      } else {
+        plaintext = fs.readFileSync(selectedFile)
+        formatLabel = 'Legacy unencrypted SQLite (.db)'
       }
+      validateSqliteBytes(plaintext)
     } catch (e) {
-      return { ok: false, error: 'Cannot read the selected file: ' + e.message }
+      return { ok: false, error: e.message }
     }
 
-    // Safety copy of current DB
-    const timestamp  = Date.now()
-    const safetyPath = dbPath.replace('.db', `_before_restore_${timestamp}.db`)
+    // ── Native OS confirmation ────────────────────────────────────────────────
+    const m  = fileName.match(/(\d{4}-\d{2}-\d{2}[_T-][\d:-]+)/)
+    const ts = m ? m[1] : 'unknown date'
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'Confirm Database Restore',
+      message: 'Replace current data with this backup?',
+      detail: [
+        `File    : ${fileName}`,
+        `Date    : ${ts}`,
+        `Format  : ${formatLabel}`,
+        `DB size : ${(plaintext.length / 1024 / 1024).toFixed(2)} MB`,
+        '',
+        'This will replace ALL current students, payments, bills and settings.',
+        'The application will restart automatically.',
+        '',
+        'WARNING: This cannot be undone. A safety copy of the current data',
+        'will be kept beside the database file.',
+      ].join('\n'),
+      buttons: ['Cancel', 'Restore Now'],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    if (response === 0) return { ok: false, cancelled: true }
 
+    // ── Write validated bytes, verify, relaunch ───────────────────────────────
+    const dbPath     = getDbPath()
+    const safetyPath = dbPath.replace('.db', `_before_restore_${Date.now()}.db`)
     try {
-      // Step 1: Save safety copy while DB is still open
+      // Safety copy while DB is still open
       fs.copyFileSync(dbPath, safetyPath)
 
-      // Step 2: Close DB — releases all file locks
+      // Close DB — release all file locks (Windows needs a beat)
       closeDb()
+      await new Promise(r => setTimeout(r, 400))
 
-      // Step 3: On Windows, wait a moment for file handles to release
-      await new Promise(resolve => setTimeout(resolve, 300))
+      // Remove ONLY WAL/SHM sidecar files — NEVER the main db file
+      for (const side of ['-wal', '-shm']) {
+        try { if (fs.existsSync(dbPath + side)) fs.unlinkSync(dbPath + side) } catch {}
+      }
 
-      // Step 4: Replace the database file
-      fs.copyFileSync(sourcePath, dbPath)
+      fs.writeFileSync(dbPath, plaintext)
 
-      // Step 5: Reopen to verify it works
-      reopenDb()
+      // Verify the write landed completely
+      const written = fs.statSync(dbPath).size
+      if (written !== plaintext.length) {
+        throw new Error(`Restore write incomplete — expected ${plaintext.length} bytes, got ${written}. Check disk space.`)
+      }
 
-      return { ok: true, safetyPath }
+      // Clean restart — guarantees no stale DB handles anywhere in the app
+      setTimeout(() => { app.relaunch(); app.exit(0) }, 600)
+      return { ok: true, restarting: true, safetyPath }
     } catch (e) {
-      // If replace failed, try to restore from safety copy
+      // Roll back to the safety copy — original data is never lost
       try {
         if (fs.existsSync(safetyPath)) {
-          closeDb()
           fs.copyFileSync(safetyPath, dbPath)
-          reopenDb()
         }
+        reopenDb()
       } catch {}
-      return { ok: false, error: `Failed to load database: ${e.message}` }
+      return { ok: false, error: `Restore failed: ${e.message}. Your original data is unchanged.` }
     }
   })
 
-  // ── Reload renderer after restore ────────────────────────────────────────
+  // ── List backups in the system backup folder ────────────────────────────────
+  ipcMain.handle('backup:list-local', () => {
+    try {
+      const dir = getBackupDir()
+      return fs.readdirSync(dir)
+        .filter(f => f.endsWith('.sfenc'))
+        .map(f => {
+          const st = fs.statSync(path.join(dir, f))
+          return { name: f, path: path.join(dir, f), size: st.size, mtime: st.mtimeMs }
+        })
+        .sort((a, b) => b.mtime - a.mtime)
+    } catch { return [] }
+  })
+
+  // ── Reload renderer (legacy compat — restore now relaunches instead) ────────
   ipcMain.handle('backup:reload-app', () => {
     const { BrowserWindow } = require('electron')
     const win = BrowserWindow.getAllWindows()[0]
-    if (win) {
-      // Give the DB a moment to settle before reload
-      setTimeout(() => win.reload(), 300)
-    }
+    if (win) setTimeout(() => win.reload(), 300)
     return { ok: true }
+  })
+
+  // ── Cloud sync folder (NovaPOS Google Drive method) ─────────────────────────
+  ipcMain.handle('backup:get-sync-folder', () => loadSyncConfig())
+
+  ipcMain.handle('backup:set-sync-folder', async (_, { folder, enabled = true }) => {
+    try { saveSyncConfig({ ...(loadSyncConfig() || {}), folder, enabled }); return { ok: true } }
+    catch (e) { return { ok: false, error: e.message } }
+  })
+
+  ipcMain.handle('backup:pick-sync-folder', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose Google Drive Sync Folder',
+      message: 'Select your Google Drive (or OneDrive/Dropbox) folder — encrypted backups will be copied there and synced by your cloud app.',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('backup:sync-now', async () => {
+    const cfg = loadSyncConfig()
+    if (!cfg?.folder || !cfg.enabled) return { ok: false, error: 'No sync folder configured' }
+    try {
+      const r = performEncryptedBackup()
+      if (!r.syncCopied) return { ok: false, error: r.syncError || 'Copy to sync folder failed' }
+      return { ok: true, path: path.join(cfg.folder, r.filename) }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 
-// ── Cloud folder sync (simpler alternative to OAuth) ─────────────────────────
-const path_m = require('path')
-const fs_m   = require('fs')
-
-function getSyncConfigPath() {
-  const { getDbPath } = require('../lib/database')
-  return path_m.join(path_m.dirname(getDbPath()), 'sync_folder.json')
-}
-function loadSyncConfig() {
-  try { return JSON.parse(fs_m.readFileSync(getSyncConfigPath(), 'utf8')) } catch { return null }
-}
-function saveSyncConfig(cfg) {
-  fs_m.writeFileSync(getSyncConfigPath(), JSON.stringify(cfg, null, 2))
-}
-
-ipcMain.handle('backup:get-sync-folder', () => loadSyncConfig())
-
-ipcMain.handle('backup:set-sync-folder', async (_, { folder }) => {
-  try {
-    saveSyncConfig({ folder, enabled: true })
-    return { ok: true }
-  } catch(e) { return { ok: false, error: e.message } }
-})
-
-ipcMain.handle('backup:pick-sync-folder', async () => {
-  const result = await dialog.showOpenDialog({
-    title: 'Select Cloud Sync Folder (e.g. Google Drive or OneDrive folder)',
-    properties: ['openDirectory']
-  })
-  if (result.canceled) return null
-  return result.filePaths[0]
-})
-
-ipcMain.handle('backup:sync-now', async () => {
-  const cfg    = loadSyncConfig()
-  if (!cfg?.folder || !cfg.enabled) return { ok: false, error: 'No sync folder configured' }
-  const { getDbPath } = require('../lib/database')
-  const dbPath = getDbPath()
-  const stamp  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const dest   = path_m.join(cfg.folder, `schoolfees_backup_${stamp}.db`)
-  try {
-    if (!fs_m.existsSync(cfg.folder)) return { ok: false, error: 'Sync folder not found. Is your cloud drive mounted?' }
-    fs_m.copyFileSync(dbPath, dest)
-    // Keep last 10 in sync folder
-    const files = fs_m.readdirSync(cfg.folder)
-      .filter(f => f.startsWith('schoolfees_backup_') && f.endsWith('.db'))
-      .map(f => ({ name: f, time: fs_m.statSync(path_m.join(cfg.folder, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time)
-    files.slice(10).forEach(f => { try { fs_m.unlinkSync(path_m.join(cfg.folder, f.name)) } catch {} })
-    saveSyncConfig({ ...cfg, lastSync: new Date().toISOString() })
-    return { ok: true, path: dest }
-  } catch(e) { return { ok: false, error: e.message } }
-})
+// Export for the nightly scheduler — same code path as manual Backup Now
+module.exports.performEncryptedBackup = performEncryptedBackup
+module.exports.loadSyncConfig = loadSyncConfig

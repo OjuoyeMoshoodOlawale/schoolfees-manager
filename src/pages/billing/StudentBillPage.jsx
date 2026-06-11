@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import {
-  ArrowLeft, Receipt, Printer, FileText, RefreshCw
+  ArrowLeft, Receipt, Printer, FileText, RefreshCw, Mail
 } from 'lucide-react'
 import { PageHeader, Confirm, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
@@ -23,6 +23,7 @@ export default function StudentBillPage() {
   const [deleteAdj,    setDeleteAdj]    = useState(null)
   const [regenerating, setRegenerating] = useState(false)
   const [printing,     setPrinting]     = useState(false)
+  const [emailing,     setEmailing]     = useState(false)
 
   const load = useCallback(async () => {
     const [data, pmts, s, term] = await Promise.all([
@@ -97,6 +98,21 @@ export default function StudentBillPage() {
     }
   }
 
+  // Email the term bill to the parent
+  const handleEmailBill = async () => {
+    if (!summary?.student) return
+    setEmailing(true)
+    try {
+      const r = await window.api.sendBillEmail({
+        student_id: Number(id),
+        term_id: currentTerm?.id,
+      })
+      if (r.ok) toast.success(`Bill emailed to ${summary.student.parent_email || 'parent'}!`)
+      else toast.error(r.error || 'Failed to send bill email')
+    } catch (e) { toast.error(e.message) }
+    finally { setEmailing(false) }
+  }
+
   if (loading) return <Spinner />
   if (!summary) return (
     <div className="card text-center py-10">
@@ -120,6 +136,10 @@ export default function StudentBillPage() {
           <div className="flex gap-2 flex-wrap">
             <button className="btn-secondary btn btn-sm" onClick={handlePrint} disabled={printing}>
               <Printer size={14} /> {printing ? 'Printing…' : 'Print Bill'}
+            </button>
+            <button className="btn-secondary btn btn-sm" onClick={handleEmailBill} disabled={emailing}
+              title={summary?.student?.parent_email ? `Email to ${summary.student.parent_email}` : 'No parent email on file'}>
+              <Mail size={14} /> {emailing ? 'Sending…' : 'Email Bill'}
             </button>
             <button className="btn-secondary btn btn-sm" onClick={() => navigate(`/billing/student/${id}/statement`)}>
               <FileText size={14} /> Statement

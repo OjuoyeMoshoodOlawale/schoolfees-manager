@@ -111,6 +111,12 @@ export async function printCleanHtml(html) {
   w.close()
 }
 
+// ─── Escape user-entered text before HTML interpolation (XSS guard) ──────────
+export function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
+}
+
 // ─── Amount in words (Naira) — standard on printed receipts ──────────────────
 export function amountInWords(n) {
   n = Math.abs(Math.round(Number(n) || 0))
@@ -145,7 +151,8 @@ export function amountInWords(n) {
 export function buildReceiptPrintHtml({ payment, school, totalBilled = null, totalPaid = null }) {
   const currency = school?.currency_symbol || '₦'
   const f = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 })
-  const schoolName = school?.school_name || 'School'
+  const e = escapeHtml
+  const schoolName = e(school?.school_name || 'School')
   const isReversal = Number(payment.amount_paid) < 0
   const paid = Math.abs(Number(payment.amount_paid))
   const balance = totalBilled !== null && totalPaid !== null
@@ -154,17 +161,17 @@ export function buildReceiptPrintHtml({ payment, school, totalBilled = null, tot
   const logoHtml = school?.logo_path
     ? `<img src="localfile://${school.logo_path}" style="max-height:60px;max-width:150px;display:block;margin:0 auto 8px;object-fit:contain;"/>`
     : ''
-  const addressLine = [school?.address, school?.phone, school?.email].filter(Boolean).join(' &bull; ')
+  const addressLine = [school?.address, school?.phone, school?.email].filter(Boolean).map(e).join(' &bull; ')
 
   const infoRows = [
-    ['Received From',  payment.parent_name || `Parent/Guardian of ${payment.first_name || ''}`],
-    ['Student',        `${payment.last_name||''} ${payment.first_name||''}`.trim()],
-    ['Reg. Number',    payment.reg_number || '—'],
-    ['Class',          payment.class_name || '—'],
-    ['Term / Session', `${payment.term_name||''}, ${payment.session_name||''}`],
-    ['Payment Date',   payment.payment_date],
-    ['Payment Method', String(payment.payment_method||'').toUpperCase()],
-    ...(payment.reference ? [['Reference', payment.reference]] : []),
+    ['Received From',  e(payment.parent_name || `Parent/Guardian of ${payment.first_name || ''}`)],
+    ['Student',        e(`${payment.last_name||''} ${payment.first_name||''}`.trim())],
+    ['Reg. Number',    e(payment.reg_number || '—')],
+    ['Class',          e(payment.class_name || '—')],
+    ['Term / Session', e(`${payment.term_name||''}, ${payment.session_name||''}`)],
+    ['Payment Date',   e(payment.payment_date)],
+    ['Payment Method', e(String(payment.payment_method||'').toUpperCase())],
+    ...(payment.reference ? [['Reference', e(payment.reference)]] : []),
   ]
 
   const summaryRows = []
@@ -184,7 +191,7 @@ export function buildReceiptPrintHtml({ payment, school, totalBilled = null, tot
     <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-family:Arial,sans-serif;">
       <span style="font-size:11pt;font-weight:bold;letter-spacing:.08em;color:${isReversal ? '#b91c1c' : '#1e293b'};">
         ${isReversal ? 'PAYMENT REVERSAL NOTICE' : 'OFFICIAL PAYMENT RECEIPT'}</span>
-      <span style="font-size:9.5pt;font-family:'Courier New',monospace;font-weight:bold;">No. ${payment.receipt_number}</span>
+      <span style="font-size:9.5pt;font-family:'Courier New',monospace;font-weight:bold;">No. ${e(payment.receipt_number)}</span>
     </div>
     <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;">
       <tbody>
@@ -211,7 +218,7 @@ export function buildReceiptPrintHtml({ payment, school, totalBilled = null, tot
       <div style="width:42%;border-top:1px solid #94a3b8;text-align:center;font-size:8.5pt;color:#64748b;padding-top:4px;">Authorised Signature</div>
     </div>
     <div style="text-align:center;padding:8px 18px 12px;font-size:8.5pt;color:#94a3b8;font-family:Arial,sans-serif;">
-      ${school?.receipt_footer || 'Thank you for your payment.'}<br/>
+      ${e(school?.receipt_footer || 'Thank you for your payment.')}<br/>
       This is a computer-generated receipt issued by ${schoolName}.
     </div>
   </div>`

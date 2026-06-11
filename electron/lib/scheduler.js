@@ -29,31 +29,43 @@ function saveSchedulerConfig(cfg) {
 }
 
 // ── Local rotating backup ─────────────────────────────────────────────────────
+// Uses the SAME encrypted backup code path as the manual "Backup Now" button:
+// AES-256-GCM .sfenc → system backup folder → copy to Google Drive sync folder.
+// A plain rotating copy is also kept in auto_backups as a last-resort fallback.
 function runLocalAutoBackup() {
   const cfg    = loadSchedulerConfig()
   const dbPath = getDbPath()
   const dir    = getAutoBackupDir()
   const stamp  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const dest   = path.join(dir, `auto_${stamp}.db`)
 
+  // 1) Encrypted backup + cloud sync copy (primary)
+  let encrypted = null
+  try {
+    const { performEncryptedBackup } = require('../handlers/backup')
+    encrypted = performEncryptedBackup({ prefix: 'auto' })
+    console.log(`[Scheduler] Encrypted auto-backup saved: ${encrypted.path}` +
+      (encrypted.syncCopied ? ' (synced to cloud folder)' : ''))
+  } catch (e) {
+    console.error('[Scheduler] Encrypted auto-backup failed:', e.message)
+  }
+
+  // 2) Plain rotating safety copy (fallback — local only, never synced)
+  const dest = path.join(dir, `auto_${stamp}.db`)
   try {
     fs.copyFileSync(dbPath, dest)
-
-    // Prune old files — keep last N
     const keep   = cfg.keepLocal || 7
     const files  = fs.readdirSync(dir)
       .filter(f => f.startsWith('auto_') && f.endsWith('.db'))
       .map(f => ({ name: f, time: fs.statSync(path.join(dir, f)).mtimeMs }))
       .sort((a, b) => b.time - a.time)
-
     files.slice(keep).forEach(f => {
       try { fs.unlinkSync(path.join(dir, f.name)) } catch {}
     })
-
     console.log(`[Scheduler] Auto-backup saved: ${dest}`)
-    return { ok: true, path: dest }
+    return { ok: true, path: encrypted?.path || dest, syncCopied: !!encrypted?.syncCopied }
   } catch (e) {
     console.error('[Scheduler] Auto-backup failed:', e.message)
+    if (encrypted?.ok) return { ok: true, path: encrypted.path, syncCopied: encrypted.syncCopied }
     return { ok: false, error: e.message }
   }
 }
@@ -98,25 +110,30 @@ function startScheduler() {
 
   scheduledTask = cron.schedule(expression, async () => {
     console.log('[Scheduler] Running nightly backup...')
-    runLocalAutoBackup()
-    if (cfg.gdriveEnabled) {
-      await runGDriveAutoBackup()
-    }
-    // Also sync to cloud folder if configured
+    const result = runLocalAutoBackup()   // encrypted .sfenc + cloud sync copy + rotating plain copy
+
+    // Notify the user that the auto-backup finished
     try {
-      const { getDbPath } = require('./database')
-      const syncCfgPath = require('path').join(require('path').dirname(getDbPath()), 'sync_folder.json')
-      if (require('fs').existsSync(syncCfgPath)) {
-        const syncCfg = JSON.parse(require('fs').readFileSync(syncCfgPath, 'utf8'))
-        if (syncCfg.enabled && syncCfg.folder) {
-          const ipcMain = require('electron').ipcMain
-          // Fire via IPC to reuse the sync handler
-          const { BrowserWindow } = require('electron')
-          const win = BrowserWindow.getAllWindows()[0]
-          if (win) win.webContents.executeJavaScript('window.api.syncNow()').catch(() => {})
+      const { BrowserWindow, Notification } = require('electron')
+      const win = BrowserWindow.getAllWindows()[0]
+      const when = new Date().toLocaleString('en-NG')
+      if (result?.ok) {
+        // In-app toast via the renderer
+        if (win) win.webContents.send('backup:auto-done', {
+          ok: true, at: when, syncCopied: !!result.syncCopied, path: result.path,
+        })
+        // Native OS notification (shows even if the window is minimised)
+        if (Notification && Notification.isSupported()) {
+          new Notification({
+            title: 'SchoolFees Manager — Backup Complete',
+            body: `Automatic backup saved${result.syncCopied ? ' and synced to your cloud folder' : ''} at ${when}.`,
+            silent: true,
+          }).show()
         }
+      } else if (win) {
+        win.webContents.send('backup:auto-done', { ok: false, at: when, error: result?.error })
       }
-    } catch(e) { console.log('[Scheduler] Sync folder skip:', e.message) }
+    } catch (e) { console.log('[Scheduler] Notify skip:', e.message) }
   })
 
   console.log(`[Scheduler] Auto-backup scheduled at ${cfg.time} daily`)

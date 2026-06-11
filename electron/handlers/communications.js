@@ -133,6 +133,12 @@ function logEmail(db, { email, student_id, subject, body, result }) {
       result.ok ? '' : (result.error||'Unknown error')])
 }
 
+// ── Escape user-entered text before HTML interpolation (XSS guard) ───────────
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
+}
+
 // ── Amount in words (Naira) — standard on Nigerian receipts ──────────────────
 function amountInWords(n) {
   n = Math.abs(Math.round(Number(n) || 0))
@@ -165,7 +171,7 @@ function buildReceiptHtml({ settings, student, payment, termRow, classRow, balan
   amount_paid, payment_date, payment_method, reference, totalBilled = null, totalPaid = null }) {
   const currency = settings.currency_symbol || '₦'
   const fmt = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 })
-  const schoolName = settings.school_name || 'SchoolFees Manager'
+  const schoolName = esc(settings.school_name || 'SchoolFees Manager')
   const isReversal = Number(amount_paid) < 0
   const paid = Math.abs(Number(amount_paid))
 
@@ -173,17 +179,17 @@ function buildReceiptHtml({ settings, student, payment, termRow, classRow, balan
     ? `<img src="cid:school_logo" style="max-height:60px;max-width:150px;display:block;margin:0 auto 8px;object-fit:contain;" alt="${schoolName}"/>`
     : ''
 
-  const addressLine = [settings.address, settings.phone, settings.email].filter(Boolean).join(' &bull; ')
+  const addressLine = [settings.address, settings.phone, settings.email].filter(Boolean).map(esc).join(' &bull; ')
 
   const infoRows = [
-    ['Received From', student.parent_name || `Parent/Guardian of ${student.first_name || ''}`],
-    ['Student',       `${student.last_name || ''} ${student.first_name || ''}`.trim()],
-    ['Reg. Number',   student.reg_number || '—'],
-    ['Class',         classRow?.name || '—'],
-    ['Term / Session',termRow ? `${termRow.name}, ${termRow.session_name}` : '—'],
-    ['Payment Date',  payment_date],
-    ['Payment Method',String(payment_method||'').toUpperCase()],
-    reference ? ['Reference', reference] : null,
+    ['Received From', esc(student.parent_name || `Parent/Guardian of ${student.first_name || ''}`)],
+    ['Student',       esc(`${student.last_name || ''} ${student.first_name || ''}`.trim())],
+    ['Reg. Number',   esc(student.reg_number || '—')],
+    ['Class',         esc(classRow?.name || '—')],
+    ['Term / Session',esc(termRow ? `${termRow.name}, ${termRow.session_name}` : '—')],
+    ['Payment Date',  esc(payment_date)],
+    ['Payment Method',esc(String(payment_method||'').toUpperCase())],
+    reference ? ['Reference', esc(reference)] : null,
   ].filter(Boolean)
 
   // Account summary — only rows we have data for
@@ -249,12 +255,162 @@ function buildReceiptHtml({ settings, student, payment, termRow, classRow, balan
     <div>Authorised Signature</div>
   </div>
   <div class="footer">
-    ${settings.receipt_footer || 'Thank you for your payment.'}<br/>
+    ${esc(settings.receipt_footer || 'Thank you for your payment.')}<br/>
     This is a computer-generated receipt issued by ${schoolName}.
   </div>
 </div></div>
 </body></html>`
 }
+// ── Term bill data — read-only snapshot for emailing a student's bill ─────────
+// Mirrors bills:student-summary but with no side effects (no auto-generation).
+function getStudentBillData(db, student_id, term_id) {
+  const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+  if (!tid) return null
+  const student = db.prepare('SELECT * FROM students WHERE id=?').get([student_id])
+  if (!student) return null
+
+  const statusRow = db.prepare(`SELECT ss.class_id, c.name as class_name
+    FROM student_status ss LEFT JOIN classes c ON c.id=ss.class_id
+    WHERE ss.student_id=? AND ss.term_id=?`).get([student_id, tid])
+
+  const bills = db.prepare(`SELECT sb.*, fi.name as fee_item_name
+    FROM student_bills sb
+    JOIN bill_config bc ON bc.id = sb.bill_config_id
+    JOIN fee_items fi ON fi.id = bc.fee_item_id
+    WHERE sb.student_id=? AND sb.term_id=?
+    ORDER BY fi.name`).all([student_id, tid])
+
+  const adjustments = db.prepare(
+    'SELECT * FROM bill_adjustments WHERE student_id=? AND term_id=? ORDER BY created_at DESC'
+  ).all([student_id, tid])
+
+  const prevBalance = Number(db.prepare(
+    'SELECT COALESCE(SUM(balance_amount),0) as t FROM previous_term_balance WHERE student_id=? AND to_term_id=?'
+  ).get([student_id, tid])?.t || 0)
+
+  const billTotal = bills.reduce((s, b) => ['waived','frozen'].includes(b.status) ? s : s + Number(b.amount), 0)
+
+  let adjTotal = 0
+  for (const adj of adjustments) {
+    const val = adj.calc_mode === 'percent' ? (adj.amount / 100) * billTotal : Number(adj.amount)
+    adjTotal += adj.type === 'addition' ? val : -val
+  }
+
+  const totalExpected = billTotal + prevBalance + adjTotal
+  const totalPaid = Number(db.prepare(`SELECT COALESCE(SUM(amount_paid),0) as t FROM payments
+    WHERE student_id=? AND term_id=? AND is_reversed=0 AND amount_paid > 0`).get([student_id, tid])?.t || 0)
+
+  const termRow = db.prepare(`SELECT t.name as term_name, s.name as session_name
+    FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?`).get([tid])
+
+  return {
+    term_id: tid, student,
+    class_name: statusRow?.class_name || '',
+    term_name: termRow?.term_name || '', session_name: termRow?.session_name || '',
+    bills, adjustments,
+    bill_total: billTotal, prev_balance: prevBalance, adj_total: adjTotal,
+    total_expected: totalExpected, total_paid: totalPaid,
+    balance: Math.max(0, totalExpected - totalPaid),
+  }
+}
+
+// ── Build term bill email HTML — itemized fee bill for the parent ─────────────
+function buildBillEmailHtml({ settings, data }) {
+  const currency = settings.currency_symbol || '₦'
+  const f = n => currency + Number(n||0).toLocaleString('en-NG', { minimumFractionDigits:2, maximumFractionDigits:2 })
+  const schoolName = esc(settings.school_name || 'SchoolFees Manager')
+  const { student, bills, adjustments } = data
+
+  const logoHtml = settings.logo_path
+    ? `<img src="cid:school_logo" style="max-height:60px;max-width:150px;display:block;margin:0 auto 8px;object-fit:contain;" alt="${schoolName}"/>`
+    : ''
+  const addressLine = [settings.address, settings.phone, settings.email].filter(Boolean).map(esc).join(' &bull; ')
+
+  const billRows = bills.filter(b => b.status !== 'waived').map((b, i) => `
+    <tr style="background:${i % 2 === 0 ? '#f8fafc' : '#fff'}">
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt">${esc(b.fee_item_name)}</td>
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9pt;text-align:center;color:#64748b">${b.is_compulsory ? 'Compulsory' : 'Elective'}</td>
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt;text-align:right;font-weight:600">${f(b.amount)}</td>
+    </tr>`).join('')
+
+  const prevRow = data.prev_balance > 0 ? `
+    <tr style="background:#fef3c7">
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt;font-style:italic">Previous Term Balance</td>
+      <td style="border:1px solid #e2e8f0"></td>
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt;text-align:right;font-weight:600">${f(data.prev_balance)}</td>
+    </tr>` : ''
+
+  const adjRows = (adjustments || []).map(a => {
+    const effect = a.calc_mode === 'percent' ? (a.amount / 100) * data.bill_total : Number(a.amount)
+    return `<tr style="background:${a.type === 'addition' ? '#fef2f2' : '#f0fdf4'}">
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt;font-style:italic">${a.type === 'addition' ? '+ Addition' : '− Discount'}: ${esc(a.reason || '')}</td>
+      <td style="border:1px solid #e2e8f0"></td>
+      <td style="padding:6px 14px;border:1px solid #e2e8f0;font-size:9.5pt;text-align:right">${a.type === 'addition' ? '+' : '−'}${f(effect)}</td>
+    </tr>`
+  }).join('')
+
+  const bankHtml = settings.account_number ? `
+    <div style="margin:12px 18px;padding:10px 14px;background:#f8fafc;border:1px dashed #94a3b8;border-radius:6px;text-align:center;font-size:9pt;color:#334155;font-family:Arial,sans-serif">
+      <b>How to pay:</b> ${esc(settings.bank_name || '')} &bull; Account No: <b>${esc(settings.account_number)}</b>
+      ${settings.account_name ? `<br/>${esc(settings.account_name)}` : ''}
+    </div>` : ''
+
+  const fullyPaid = data.balance <= 0
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Georgia,'Times New Roman',serif;background:#f1f5f9;padding:24px;color:#1e293b}</style>
+</head><body>
+<div style="background:#fff;max-width:620px;margin:0 auto;border:1px solid #cbd5e1;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+<div style="border:2px solid #1e293b;margin:8px">
+  <div style="text-align:center;padding:18px 24px 12px;border-bottom:2px solid #1e293b">
+    ${logoHtml}
+    <div style="font-size:16pt;font-weight:bold;text-transform:uppercase;letter-spacing:.04em">${schoolName}</div>
+    ${addressLine ? `<div style="font-size:8.5pt;color:#64748b;margin-top:3px;font-family:Arial,sans-serif">${addressLine}</div>` : ''}
+  </div>
+  <div style="text-align:center;padding:9px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-family:Arial,sans-serif">
+    <span style="font-size:11pt;font-weight:bold;letter-spacing:.08em">SCHOOL FEES BILL — ${esc((data.term_name||'').toUpperCase())}, ${esc(data.session_name||'')}</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">
+    <tbody>
+      <tr><td style="padding:5px 18px;font-size:9.5pt;color:#64748b;width:36%;border-bottom:1px dotted #e2e8f0">Student</td>
+          <td style="padding:5px 18px;font-size:9.5pt;font-weight:600;text-align:right;border-bottom:1px dotted #e2e8f0">${esc(student.last_name||'')} ${esc(student.first_name||'')}</td></tr>
+      <tr><td style="padding:5px 18px;font-size:9.5pt;color:#64748b;border-bottom:1px dotted #e2e8f0">Reg. Number</td>
+          <td style="padding:5px 18px;font-size:9.5pt;font-weight:600;text-align:right;border-bottom:1px dotted #e2e8f0">${esc(student.reg_number||'—')}</td></tr>
+      <tr><td style="padding:5px 18px;font-size:9.5pt;color:#64748b;border-bottom:1px dotted #e2e8f0">Class</td>
+          <td style="padding:5px 18px;font-size:9.5pt;font-weight:600;text-align:right;border-bottom:1px dotted #e2e8f0">${esc(data.class_name||'—')}</td></tr>
+    </tbody>
+  </table>
+  <div style="padding:10px 18px 4px;font-size:8.5pt;font-weight:bold;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-family:Arial,sans-serif">Fee Breakdown</div>
+  <table style="width:96%;margin:0 auto;border-collapse:collapse;font-family:Arial,sans-serif">
+    <thead><tr style="background:#1e293b;color:#fff">
+      <th style="padding:6px 14px;font-size:9pt;text-align:left">Fee Item</th>
+      <th style="padding:6px 14px;font-size:9pt;text-align:center">Type</th>
+      <th style="padding:6px 14px;font-size:9pt;text-align:right">Amount</th>
+    </tr></thead>
+    <tbody>
+      ${billRows}
+      ${prevRow}
+      ${adjRows}
+      <tr><td colspan="2" style="padding:8px 14px;border:1px solid #1e293b;font-size:10.5pt;font-weight:bold;background:#eff6ff">TOTAL EXPECTED</td>
+          <td style="padding:8px 14px;border:1px solid #1e293b;font-size:10.5pt;font-weight:bold;text-align:right;background:#eff6ff">${f(data.total_expected)}</td></tr>
+      <tr><td colspan="2" style="padding:7px 14px;border:1px solid #e2e8f0;font-size:9.5pt">Total Paid to Date</td>
+          <td style="padding:7px 14px;border:1px solid #e2e8f0;font-size:9.5pt;text-align:right;font-weight:600;color:#16a34a">${f(data.total_paid)}</td></tr>
+      <tr><td colspan="2" style="padding:8px 14px;border:1px solid #1e293b;font-size:11pt;font-weight:bold;background:${fullyPaid ? '#f0fdf4' : '#fef2f2'}">BALANCE DUE</td>
+          <td style="padding:8px 14px;border:1px solid #1e293b;font-size:11pt;font-weight:bold;text-align:right;background:${fullyPaid ? '#f0fdf4' : '#fef2f2'};color:${fullyPaid ? '#16a34a' : '#dc2626'}">${fullyPaid ? f(0) + ' — FULLY PAID' : f(data.balance)}</td></tr>
+    </tbody>
+  </table>
+  ${bankHtml}
+  <div style="text-align:center;padding:10px 18px 14px;font-size:8.5pt;color:#94a3b8;font-family:Arial,sans-serif">
+    ${esc(settings.receipt_footer || 'Thank you.')}<br/>
+    Kindly quote the student's registration number when making payment.<br/>
+    This is a computer-generated bill issued by ${schoolName}.
+  </div>
+</div></div>
+</body></html>`
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // IPC HANDLERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -395,6 +551,79 @@ module.exports = function registerCommunicationHandlers() {
       FROM email_log l LEFT JOIN students s ON s.id=l.student_id
       ORDER BY l.id DESC LIMIT ?`).all([limit])
   })
+  // ── Term bill emails ─────────────────────────────────────────────────────────
+
+  // Individual: email one student's term bill to the parent
+  ipcMain.handle('email:send-bill', async (_, { student_id, term_id }) => {
+    const db       = getDb()
+    const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+    if (!settings?.email_enabled) return { ok: false, error: 'Email sending is disabled in Settings' }
+
+    const data = getStudentBillData(db, student_id, term_id)
+    if (!data) return { ok: false, error: 'Student or term not found' }
+    if (!data.student.parent_email) return { ok: false, error: 'No parent email on file for this student' }
+    if (!data.bills.length) return { ok: false, error: 'No bills generated for this student in the selected term' }
+
+    const html    = buildBillEmailHtml({ settings, data })
+    const subject = `School Fees Bill — ${data.term_name}, ${data.session_name} — ${data.student.last_name} ${data.student.first_name}`
+    const result  = await sendEmail(settings, {
+      to: data.student.parent_email, subject, html, logoPath: settings.logo_path || null,
+    })
+    logEmail(db, { email: data.student.parent_email, student_id, subject, body: html, result })
+    return result
+  })
+
+  // Bulk: email term bills to every parent in a class (or the whole school)
+  // Sends sequentially so a slow SMTP server isn't flooded; per-student
+  // failures don't stop the run. Returns a full summary + per-failure detail.
+  ipcMain.handle('email:send-bills-bulk', async (_, { class_id, term_id } = {}) => {
+    const db       = getDb()
+    const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+    if (!settings?.email_enabled) return { ok: false, error: 'Email sending is disabled in Settings' }
+
+    const tid = term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
+    if (!tid) return { ok: false, error: 'No term selected and no current term set' }
+
+    // Students active in this term, optionally limited to one class
+    let sql = `SELECT DISTINCT s.id FROM students s
+      JOIN student_status ss ON ss.student_id = s.id AND ss.term_id = ?
+      WHERE 1=1`
+    const params = [tid]
+    if (class_id) { sql += ' AND ss.class_id = ?'; params.push(Number(class_id)) }
+    sql += ' ORDER BY s.last_name, s.first_name'
+    const studentIds = db.prepare(sql).all(params).map(r => r.id)
+
+    if (!studentIds.length) return { ok: false, error: 'No students found for the selected class/term' }
+
+    let sent = 0, failed = 0, skipped = 0
+    const failures = []
+    for (const sid of studentIds) {
+      try {
+        const data = getStudentBillData(db, sid, tid)
+        if (!data || !data.bills.length) { skipped++; continue }
+        if (!data.student.parent_email)  {
+          skipped++
+          logEmail(db, { email: '(none)', student_id: sid,
+            subject: `Bill — ${data.term_name}`, body: '',
+            result: { ok: false, error: 'No parent email on file' } })
+          continue
+        }
+        const html    = buildBillEmailHtml({ settings, data })
+        const subject = `School Fees Bill — ${data.term_name}, ${data.session_name} — ${data.student.last_name} ${data.student.first_name}`
+        const result  = await sendEmail(settings, {
+          to: data.student.parent_email, subject, html, logoPath: settings.logo_path || null,
+        })
+        logEmail(db, { email: data.student.parent_email, student_id: sid, subject, body: html, result })
+        if (result.ok) sent++
+        else { failed++; failures.push({ student: `${data.student.last_name} ${data.student.first_name}`, error: result.error }) }
+      } catch (e) {
+        failed++
+        failures.push({ student: `ID ${sid}`, error: e.message })
+      }
+    }
+    return { ok: true, total: studentIds.length, sent, failed, skipped, failures: failures.slice(0, 20) }
+  })
+
   ipcMain.handle('email:send-receipt', async (_, { payment_id }) => {
     // Legacy: resend by payment_id — look up payment and build receipt
     const db       = getDb()
@@ -432,3 +661,5 @@ module.exports.sendEmail         = sendEmail
 module.exports.buildReceiptHtml  = buildReceiptHtml
 module.exports.logSms            = logSms
 module.exports.logEmail          = logEmail
+module.exports.getStudentBillData = getStudentBillData
+module.exports.buildBillEmailHtml = buildBillEmailHtml

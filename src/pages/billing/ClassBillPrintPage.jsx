@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Printer, Download, Users, ChevronDown, ChevronRight, Loader, RefreshCw } from 'lucide-react'
-import { PageHeader, Spinner, exportToExcel } from '../../components/ui'
+import { Printer, Download, Users, ChevronDown, ChevronRight, Loader, RefreshCw, Mail } from 'lucide-react'
+import { PageHeader, Spinner, exportToExcel, Confirm } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { buildBillSlipHtml, printCleanHtml } from '../../lib/utils'
 
@@ -17,6 +17,8 @@ export default function ClassBillPrintPage() {
   const [classData,   setClassData]   = useState([])
   const [loading,     setLoading]     = useState(false)
   const [printing,    setPrinting]    = useState(false)
+  const [emailing,    setEmailing]    = useState(false)
+  const [confirmBulkEmail, setConfirmBulkEmail] = useState(false)
   const [expanded,    setExpanded]    = useState({})
 
   useEffect(() => {
@@ -122,6 +124,23 @@ export default function ClassBillPrintPage() {
     toast.success('Exported to Excel')
   }
 
+  // Email every parent in the class their child's term bill
+  const handleBulkEmail = async () => {
+    setEmailing(true)
+    try {
+      const r = await window.api.sendBillEmailsBulk({
+        class_id: Number(selClass),
+        term_id: Number(selTerm),
+      })
+      if (!r.ok) { toast.error(r.error || 'Bulk email failed'); return }
+      toast.success(`Bills emailed: ${r.sent} sent, ${r.skipped} skipped (no email/bills), ${r.failed} failed`)
+      if (r.failed > 0 && r.failures?.length) {
+        toast.warn(`First failure: ${r.failures[0].student} — ${r.failures[0].error}`)
+      }
+    } catch (e) { toast.error(e.message) }
+    finally { setEmailing(false); setConfirmBulkEmail(false) }
+  }
+
   const totalBilled  = classData.reduce((s, r) => s + r.total_expected, 0)
   const totalPaid    = classData.reduce((s, r) => s + r.total_paid,    0)
   const totalBalance = classData.reduce((s, r) => s + r.balance,       0)
@@ -136,11 +155,22 @@ export default function ClassBillPrintPage() {
             <button className="btn-secondary btn btn-sm" onClick={handleExport}>
               <Download size={14} /> Export Excel
             </button>
+            <button className="btn-secondary btn btn-sm" onClick={() => setConfirmBulkEmail(true)} disabled={emailing}>
+              <Mail size={14} /> {emailing ? 'Sending…' : `Email All (${classData.length})`}
+            </button>
             <button className="btn-primary btn" onClick={handlePrint} disabled={printing}>
               <Printer size={15} /> {printing ? 'Sending to printer…' : `Print All (${classData.length})`}
             </button>
           </div>
         )}
+      />
+
+      <Confirm
+        open={confirmBulkEmail}
+        onClose={() => setConfirmBulkEmail(false)}
+        onConfirm={handleBulkEmail}
+        title="Email bills to all parents?"
+        message={`This will email each parent in this class their child's term bill (${classData.length} students). Students without a parent email on file will be skipped. Continue?`}
       />
 
       <div className="card mb-5 flex flex-wrap gap-4 items-end">

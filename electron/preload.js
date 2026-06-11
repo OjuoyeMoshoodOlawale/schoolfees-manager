@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('api', {
   updateUser:         (d)    => ipcRenderer.invoke('auth:update-user', d),
   deleteUser:         (id)   => ipcRenderer.invoke('auth:delete-user', id),
   changePassword:     (d)    => ipcRenderer.invoke('auth:change-password', d),
+  resetRequest:       (d)    => ipcRenderer.invoke('auth:reset-request', d),
+  resetApply:         (d)    => ipcRenderer.invoke('auth:reset-apply', d),
 
   // ── Activation & App State
   getActivationStatus:()     => ipcRenderer.invoke('activation:status'),
@@ -123,6 +125,10 @@ contextBridge.exposeInMainWorld('api', {
   testSms:            (d)    => ipcRenderer.invoke('sms:test', d),
   sendEmail:          (d)    => ipcRenderer.invoke('email:send', d),
   sendEmailReceipt:   (d)    => ipcRenderer.invoke('email:send-receipt', d),
+  sendBillEmail:      (d)    => ipcRenderer.invoke('email:send-bill', d),
+  sendBillEmailsBulk: (d)    => ipcRenderer.invoke('email:send-bills-bulk', d),
+  backupNow:          ()     => ipcRenderer.invoke('backup:now'),
+  listLocalBackups:   ()     => ipcRenderer.invoke('backup:list-local'),
   testEmail:          (d)    => ipcRenderer.invoke('email:test', d),
   getEmailLog:        (d)    => ipcRenderer.invoke('email:log', d),
   getEmailLogFull:    (d)    => ipcRenderer.invoke('email:log-full', d),
@@ -250,4 +256,11 @@ contextBridge.exposeInMainWorld('api', {
   getDbDir:           ()     => ipcRenderer.invoke('app:get-db-dir'),
   printHtml:          (d)    => ipcRenderer.invoke('app:print-html', d),
   setContentProtection: (e) => ipcRenderer.invoke('app:set-content-protection', e),
+
+  // ── Event subscriptions (renderer listens) ──
+  onAutoBackupDone:   (cb)   => {
+    const handler = (_e, data) => cb(data)
+    ipcRenderer.on('backup:auto-done', handler)
+    return () => ipcRenderer.removeListener('backup:auto-done', handler)
+  },
 })

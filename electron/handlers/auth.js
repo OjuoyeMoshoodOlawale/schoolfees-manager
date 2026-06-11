@@ -33,18 +33,29 @@ function verifyPassword(pw, stored) {
 }
 
 // DEVELOPER master login — works in ALL builds (for remote client support).
-// The password is HMAC-derived so the literal string isn't sitting in the repo.
-// Username: devmaster   Password: see computeDevPassword() — share securely with support staff only.
+// NovaPOS pattern: the password ROTATES every 30 minutes using an HMAC of the
+// current time slot. Nothing is stored anywhere — the developer computes the
+// current password on demand with:  node scripts/gen-dev-password.js
+// Two passwords are valid at any moment (current + previous slot) so there is
+// a grace period around rotation time.
+// Username: devmaster
+const DEV_SECRET = process.env.SF_DEVMASTER_SECRET || 'SF_DEVMASTER_2025_OJUOYE_PRIVATE'
+function getDevPasswords() {
+  const slot = Math.floor(Date.now() / (30 * 60 * 1000))
+  const current = crypto.createHmac('sha256', DEV_SECRET).update(`dev:${slot}`).digest('hex').slice(0, 12)
+  const prev    = crypto.createHmac('sha256', DEV_SECRET).update(`dev:${slot - 1}`).digest('hex').slice(0, 12)
+  return [current, prev]
+}
+// Legacy static password — still accepted so existing support docs keep working
 function computeDevPassword() {
-  // Derived from a secret + fixed seed. Change DEV_SECRET to rotate the password.
-  const DEV_SECRET = 'SF_DEVMASTER_2025_OJUOYE_PRIVATE'
-  return crypto.createHmac('sha256', DEV_SECRET).update('devmaster-support-access').digest('hex').slice(0, 16)
+  return crypto.createHmac('sha256', 'SF_DEVMASTER_2025_OJUOYE_PRIVATE').update('devmaster-support-access').digest('hex').slice(0, 16)
 }
 const DEV_USERNAME = 'devmaster'
 
 ipcMain.handle('auth:login', (_, { username, password }) => {
   // Developer support login — available in production for client assistance
-  if (username === DEV_USERNAME && password === computeDevPassword()) {
+  if (username === DEV_USERNAME &&
+      (getDevPasswords().includes(password) || password === computeDevPassword())) {
     return { ok: true, user: { id: 0, username: 'devmaster', full_name: 'Developer (Support)', role: 'developer', is_active: 1 } }
   }
   const db = getDb()
@@ -60,6 +71,54 @@ ipcMain.handle('auth:login', (_, { username, password }) => {
   db.prepare("UPDATE users SET last_login=datetime('now') WHERE id=?").run([user.id])
   const { password_hash, ...safe } = user
   return { ok: true, user: safe }
+})
+
+// ── Forgot password (offline reset code) ─────────────────────────────────────
+// The user can't reach a server, so resets are authorised by the developer:
+//   1. User clicks "Forgot password", picks their username → app shows the
+//      Machine ID + username and a short request code.
+//   2. User sends those to support. Developer runs:
+//        node scripts/gen-reset-code.js <machine-id> <username>
+//   3. Developer reads back the reset code; the app verifies it offline
+//      (HMAC of machineId:username:slot, rotates daily) and lets the user
+//      set a new password. No code is ever stored.
+function computeResetCode(machineId, username) {
+  const { getMachineId } = require('../lib/machineId')
+  const mid  = machineId || getMachineId()
+  const slot = Math.floor(Date.now() / (24 * 60 * 60 * 1000)) // daily slot
+  const cur  = crypto.createHmac('sha256', DEV_SECRET)
+    .update(`reset:${mid}:${String(username || '').toLowerCase()}:${slot}`).digest('hex').toUpperCase().slice(0, 12)
+  const prev = crypto.createHmac('sha256', DEV_SECRET)
+    .update(`reset:${mid}:${String(username || '').toLowerCase()}:${slot - 1}`).digest('hex').toUpperCase().slice(0, 12)
+  return [cur, prev] // current + yesterday (grace)
+}
+
+// Returns the info the user must send to support (no secrets here)
+ipcMain.handle('auth:reset-request', (_, { username }) => {
+  const { getMachineId } = require('../lib/machineId')
+  const db = getDb()
+  const user = db.prepare('SELECT id, username FROM users WHERE username=? AND is_active=1').get([String(username || '').trim()])
+  if (!user) return { ok: false, error: 'No active user with that username' }
+  return { ok: true, machine_id: getMachineId(), username: user.username }
+})
+
+// Verify the developer-supplied code and set the new password
+ipcMain.handle('auth:reset-apply', (_, { username, code, new_password }) => {
+  const db = getDb()
+  const uname = String(username || '').trim()
+  const user = db.prepare('SELECT id FROM users WHERE username=? AND is_active=1').get([uname])
+  if (!user) return { ok: false, error: 'No active user with that username' }
+  if (!new_password || new_password.length < 4) return { ok: false, error: 'New password must be at least 4 characters' }
+
+  const entered = String(code || '').trim().toUpperCase().replace(/\s|-/g, '')
+  const valid = computeResetCode(null, uname).some(c => {
+    if (c.length !== entered.length) return false
+    try { return crypto.timingSafeEqual(Buffer.from(c), Buffer.from(entered)) } catch { return false }
+  })
+  if (!valid) return { ok: false, error: 'Invalid or expired reset code. Ask support for a fresh code.' }
+
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run([hashPassword(new_password), user.id])
+  return { ok: true }
 })
 
 ipcMain.handle('auth:list-users', () => {

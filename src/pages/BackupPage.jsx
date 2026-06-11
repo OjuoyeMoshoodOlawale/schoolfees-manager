@@ -86,11 +86,28 @@ export default function BackupPage() {
   }, [gdriveStatus?.connected])
 
   // ── Local backup ─────────────────────────────────────────────────────────
+  // Backup Now: encrypted .sfenc → system backups folder + cloud sync folder
+  const handleBackupNow = async () => {
+    setBusy(true)
+    try {
+      const r = await window.api.backupNow()
+      if (r.ok) {
+        setLastLocal(new Date().toLocaleString('en-NG'))
+        toast.success(`Encrypted backup saved!${r.syncCopied ? ' Synced to cloud folder.' : ''}`)
+        if (r.syncError) toast.warn(`Cloud copy failed: ${r.syncError}`)
+        loadAll()
+      } else toast.error(r.error || 'Backup failed')
+    } catch { toast.error('Backup failed') }
+    finally { setBusy(false) }
+  }
+
+  // Download: save-as an encrypted .sfenc to USB / another folder
   const handleLocalBackup = async () => {
     setBusy(true)
     try {
       const r = await window.api.backupLocal()
       if (r.ok) { setLastLocal(new Date().toLocaleString('en-NG')); toast.success(`Backup saved!`) }
+      else if (r.error) toast.error(r.error)
       else toast.info('Backup cancelled')
     } catch { toast.error('Backup failed') }
     finally { setBusy(false) }
@@ -100,9 +117,12 @@ export default function BackupPage() {
     setBusy(true)
     try {
       const r = await window.api.restoreLocal()
-      if (r.ok) { toast.success('Restored! Reloading…'); setTimeout(() => window.api.reloadApp(), 1500) }
+      if (r.ok && r.restarting) {
+        toast.success('Restore verified — app is restarting…')
+        // App relaunches itself; nothing else to do.
+      }
+      else if (r.cancelled) toast.info('Restore cancelled')
       else if (r.error) toast.error(r.error)
-      else toast.info('Cancelled')
     } catch (e) { toast.error(e.message) }
     finally { setBusy(false); setConfirmRestore(false) }
   }
@@ -200,19 +220,22 @@ export default function BackupPage() {
       <div className="space-y-4">
 
         {/* ── Local Backup ── */}
-        <Card icon={HardDrive} title="Local Backup" subtitle="Save or restore the database from USB, hard disk, or any folder." color="blue">
+        <Card icon={HardDrive} title="Local Backup" subtitle="Encrypted backups (.sfenc) — tied to your licence key, restorable on any machine activated with the same key." color="blue">
           <div className="space-y-3">
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
               <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-              <span>Works offline · Single file · Instant</span>
+              <span>AES-256 encrypted · Works offline · Auto-copies to cloud folder</span>
               {lastLocalBackup && <span className="ml-auto text-xs text-gray-400">Last: {lastLocalBackup}</span>}
             </div>
             <div className="flex gap-3">
-              <button className="btn btn-primary flex-1 justify-center" onClick={handleLocalBackup} disabled={busy}>
+              <button className="btn btn-primary flex-1 justify-center" onClick={handleBackupNow} disabled={busy}>
                 <HardDrive size={15} /> Backup Now
               </button>
+              <button className="btn btn-secondary flex-1 justify-center" onClick={handleLocalBackup} disabled={busy}>
+                <Download size={15} /> Download Copy
+              </button>
               <button className="btn btn-secondary flex-1 justify-center" onClick={() => setConfirmRestore(true)} disabled={busy}>
-                <FolderSearch size={15} /> Load .db File
+                <FolderSearch size={15} /> Restore…
               </button>
             </div>
           </div>
@@ -509,8 +532,8 @@ export default function BackupPage() {
         onClose={() => setConfirmRestore(false)}
         onConfirm={handleLocalRestore}
         danger
-        title="Load Database File"
-        message="This will replace all current data with the selected .db file. A safety copy of the current database will be saved first. The app will reload automatically. Continue?"
+        title="Restore From Backup"
+        message="You will be asked to pick a backup file (.sfenc encrypted or legacy .db). The file is decrypted and verified in memory first — nothing is replaced until it passes all checks and you confirm again. A safety copy of the current database is always saved, and the app restarts automatically after a successful restore. Continue?"
       />
 
       {/* Confirm GDrive restore */}

@@ -10,7 +10,11 @@
     "build:win": "vite build && electron-builder --win --x64",
     "build:dir": "vite build && electron-builder --dir",
     "vite:only": "vite",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "test": "node scripts/run-tests.js",
+    "gen:key": "node scripts/gen-activation-key.js",
+    "gen:devpass": "node scripts/gen-dev-password.js",
+    "gen:reset": "node scripts/gen-reset-code.js"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

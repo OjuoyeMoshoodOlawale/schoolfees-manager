@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { toast } from 'react-toastify'
 import { useAuth } from './context/AuthContext'
 import Layout from './components/layout/Layout'
 import { Spinner } from './components/ui'
@@ -71,18 +72,37 @@ function AuthGate() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 mx-auto">
-            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              <circle cx="32" cy="32" r="28" stroke="#1e40af" strokeWidth="4" strokeOpacity="0.2"/>
-              <path d="M32 4 A28 28 0 0 1 60 32" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round"
-                className="animate-spin origin-center" style={{transformOrigin:'32px 32px',animation:'spin 1s linear infinite'}}/>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center">
+        <div className="text-center space-y-5">
+          {/* Branded app mark */}
+          <div className="w-20 h-20 mx-auto rounded-2xl bg-blue-600 flex items-center justify-center shadow-2xl relative">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+            {/* Spinning ring around the mark */}
+            <svg viewBox="0 0 80 80" className="absolute -inset-1 w-[88px] h-[88px]">
+              <circle cx="40" cy="40" r="38" stroke="#3b82f6" strokeWidth="3" strokeOpacity="0.15" fill="none"/>
+              <path d="M40 2 A38 38 0 0 1 78 40" stroke="#60a5fa" strokeWidth="3" strokeLinecap="round" fill="none"
+                style={{ transformOrigin: '40px 40px', animation: 'spin 1s linear infinite' }}/>
             </svg>
           </div>
           <div>
-            <p className="text-white font-semibold text-lg">SchoolFees Manager</p>
+            <p className="text-white font-bold text-xl tracking-tight">SchoolFees Manager</p>
             <p className="text-slate-400 text-sm mt-1">Starting up, please wait…</p>
+          </div>
+        </div>
+
+        {/* Powered-by footer */}
+        <div className="absolute bottom-8 flex flex-col items-center gap-1.5">
+          <div className="flex items-center gap-2 text-slate-500 text-xs">
+            <span>Powered by</span>
+            <span className="flex items-center gap-1.5 font-semibold text-slate-300">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              webAutomate Nigeria
+            </span>
           </div>
         </div>
         <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
@@ -126,6 +146,22 @@ function LoginScreenWrapper({ onLogin }) {
 // ─── Main App (authenticated) ─────────────────────────────────────────────────
 function MainApp() {
   const { accounting } = useAuth()
+
+  // Notify when the nightly auto-backup completes
+  useEffect(() => {
+    if (!window.api?.onAutoBackupDone) return
+    const off = window.api.onAutoBackupDone((data) => {
+      if (data.ok) {
+        toast.success(
+          `Automatic backup completed${data.syncCopied ? ' and synced to your cloud folder' : ''}.`,
+          { autoClose: 6000 }
+        )
+      } else {
+        toast.error(`Automatic backup failed: ${data.error || 'unknown error'}`, { autoClose: 8000 })
+      }
+    })
+    return off
+  }, [])
 
   return (
     <ErrorBoundary>
