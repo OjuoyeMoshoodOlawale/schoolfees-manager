@@ -63,6 +63,21 @@ const effectiveDbPath = (() => {
 
 setDbPath(effectiveDbPath)
 
+// ─── LAN multi-user (server/client) ───────────────────────────────────────────
+// Capture EVERY ipcMain.handle registration into a registry so the LAN bridge
+// can execute the same handlers for client machines. Must be patched BEFORE
+// the handler modules below are required.
+const { loadNetConfig, saveNetConfig, lanIps } = require('./lib/netConfig')
+const { startLanServer, stopLanServer, lanServerRunning } = require('./lib/lanServer')
+const ipcRegistry = new Map()
+{
+  const origHandle = ipcMain.handle.bind(ipcMain)
+  ipcMain.handle = (channel, fn) => { ipcRegistry.set(channel, fn); return origHandle(channel, fn) }
+}
+const netCfg = loadNetConfig()
+const IS_CLIENT = netCfg.mode === 'client'
+if (IS_CLIENT) console.log(`[LAN] CLIENT mode — data served by ${netCfg.serverHost}:${netCfg.serverPort}`)
+
 // ─── Register All Handler Modules ─────────────────────────────────────────────
 require('./handlers/errorHandler')  // load first — safeHandle must exist before other handlers use it
 require('./handlers/settings')(dbDir)
@@ -81,9 +96,42 @@ require('./handlers/expenses')
 require('./handlers/inventory')
 require('./handlers/dataImport')
 
-// ── Start auto-backup scheduler ───────────────────────────────────────────────
+// ── Start auto-backup scheduler (not on clients — the server owns the DB) ───
 const { startScheduler } = require('./lib/scheduler')
-startScheduler()
+if (!IS_CLIENT) startScheduler()
+
+// ─── Network mode IPC (always local — never routed to a server) ──────────────
+// Synchronous variant so the preload can decide routing before the app loads.
+ipcMain.on('net:get-config-sync', (event) => { event.returnValue = loadNetConfig() })
+ipcMain.handle('net:get-config', () => ({ ...loadNetConfig(), running: lanServerRunning() }))
+ipcMain.handle('net:lan-ips',    () => lanIps())
+ipcMain.handle('net:save-config', (_, cfg) => {
+  const merged = saveNetConfig(cfg || {})
+  // Apply server start/stop live where possible; mode switches need a restart
+  if (merged.mode === 'server') {
+    try { startLanServer(ipcRegistry, { port: merged.port, token: merged.token }) } catch (e) { return { ...merged, error: e.message } }
+  } else {
+    stopLanServer()
+  }
+  return { ...merged, running: lanServerRunning(), needsRestart: true }
+})
+ipcMain.handle('net:test-connection', async (_, { host, port, token }) => {
+  try {
+    const ping = await fetch(`http://${host}:${port}/ping`, { signal: AbortSignal.timeout(4000) }).then(r => r.json())
+    if (!ping?.ok) return { ok: false, error: 'Server responded but is not SchoolFees Manager' }
+    // Authenticated round-trip — proves the token too
+    const res = await fetch(`http://${host}:${port}/ipc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-sf-token': token || '' },
+      body: JSON.stringify({ channel: 'activation:status', data: null }),
+      signal: AbortSignal.timeout(4000),
+    }).then(r => r.json())
+    if (res.__error) return { ok: false, error: res.__error }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e.name === 'TimeoutError' ? 'No response — check the IP, port, and that the server app is running' : e.message }
+  }
+})
 
 // ─── Utility IPC ──────────────────────────────────────────────────────────────
 ipcMain.handle('shell:open-path',     (_, p)   => shell.openPath(p))
@@ -382,6 +430,11 @@ cleanDbLock() // Run immediately on startup — before DB opens
 app.whenReady().then(() => {
   // Hide native menu bar in production — keep in dev for DevTools access
   if (app.isPackaged) Menu.setApplicationMenu(null)
+  // LAN multi-user: in server mode, start serving clients on launch
+  if (netCfg.mode === 'server') {
+    try { startLanServer(ipcRegistry, { port: netCfg.port, token: netCfg.token }) }
+    catch (e) { console.error('[LAN] failed to start server:', e.message) }
+  }
   createWindow()
 })
 app.on('window-all-closed', () => {

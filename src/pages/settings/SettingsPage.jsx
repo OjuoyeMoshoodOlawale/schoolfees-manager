@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash, Briefcase, Archive } from 'lucide-react'
+import { Building2, Upload, Save, X, Bell, MessageSquare, Mail, DollarSign, Printer, Key, Hash, Briefcase, Archive , Wifi } from 'lucide-react'
+import NetworkSettings from './NetworkSettings'
 import { PageHeader, Field, Spinner } from '../../components/ui'
 import { printCleanHtml, todayISO } from '../../lib/utils'
 import { useAuth } from '../../context/AuthContext'
@@ -21,7 +22,7 @@ const TABS = [
   { id: 'accounting',   label: 'Accounting',    icon: Key },
   { id: 'payroll',      label: 'Payroll',       icon: Briefcase },
   { id: 'inventory',    label: 'Inventory',     icon: Archive },
-  { id: 'backup',       label: 'Backup',        icon: Bell },
+  { id: 'network',      label: 'Network',       icon: Wifi },
 ]
 
 export default function SettingsPage() {
@@ -412,22 +413,8 @@ export default function SettingsPage() {
           />
         )}
 
-        {/* ── Backup ── */}
-        {tab === 'backup' && (
-          <div className="card space-y-4">
-            <h3 className="text-sm font-semibold text-gray-700">Auto Backup Settings</h3>
-            <Field label="Enable Auto Backup">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4 accent-blue-600" {...register('auto_backup')} />
-                <span className="text-sm text-gray-700">Automatically backup database nightly</span>
-              </label>
-            </Field>
-            <Field label="Backup Time">
-              <input type="time" className="form-input w-40" {...register('backup_time')} />
-            </Field>
-            <p className="text-xs text-gray-400">Go to Backup & Restore in the sidebar to manually back up or restore your database.</p>
-          </div>
-        )}
+        {/* ── Network / LAN multi-user ── */}
+        {tab === 'network' && <NetworkSettings />}
 
         {isDirty && (
           <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">

@@ -234,6 +234,24 @@ module.exports = function registerBackupHandlers() {
   // ── Cloud sync folder (NovaPOS Google Drive method) ─────────────────────────
   ipcMain.handle('backup:get-sync-folder', () => loadSyncConfig())
 
+  // List the encrypted backups sitting in the user's ONE backup folder
+  ipcMain.handle('backup:list-folder', () => {
+    const cfg = loadSyncConfig()
+    if (!cfg?.folder) return { configured: false, files: [] }
+    try {
+      if (!fs.existsSync(cfg.folder)) return { configured: true, missing: true, files: [] }
+      const files = fs.readdirSync(cfg.folder)
+        .filter(f => f.endsWith('.sfenc'))
+        .map(f => {
+          const st = fs.statSync(path.join(cfg.folder, f))
+          return { name: f, size: st.size, mtime: st.mtimeMs }
+        })
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, 15)
+      return { configured: true, files }
+    } catch (e) { return { configured: true, error: e.message, files: [] } }
+  })
+
   ipcMain.handle('backup:set-sync-folder', async (_, { folder, enabled = true }) => {
     try { saveSyncConfig({ ...(loadSyncConfig() || {}), folder, enabled }); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
