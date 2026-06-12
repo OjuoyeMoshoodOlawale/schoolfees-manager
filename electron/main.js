@@ -187,7 +187,7 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false, direct = fals
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
       body { font-family: Arial, sans-serif; font-size: 12pt; background: ${showPreview ? '#525659' : 'white'}; }
-      @page { margin: 1cm; }
+      @page { size: A4; margin: 1cm; }
       ${showPreview ? `
       .sf-print-toolbar {
         position: sticky; top: 0; z-index: 9999;
@@ -206,14 +206,29 @@ ipcMain.handle('app:print-html', async (_, { html, silent = false, direct = fals
       .sf-pt-print:hover { background: #1d4ed8; }
       .sf-pt-close { background: #475569; color: #fff; }
       .sf-pt-close:hover { background: #334155; }
+      /* The preview "paper" mirrors a real A4 page: 21cm wide, with the SAME
+         1cm @page margin applied as inner padding. This makes the preview a
+         true what-you-see-is-what-you-print view — printing no longer shifts
+         the layout, because the content box is identical in both modes. */
       .sf-print-paper {
-        background: #fff; max-width: 880px; margin: 16px auto 32px;
-        padding: 24px; box-shadow: 0 4px 18px rgba(0,0,0,.4); min-height: 400px;
+        background: #fff;
+        width: 21cm; max-width: 21cm;
+        margin: 16px auto 32px;
+        padding: 1cm;
+        box-shadow: 0 4px 18px rgba(0,0,0,.4);
+        min-height: 29.7cm;
       }
       @media print {
         body { background: white; }
         .sf-print-toolbar { display: none !important; }
-        .sf-print-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+        /* In print, the @page margin supplies the edge spacing, so the paper
+           wrapper drops its own width/margin/padding to avoid double margins
+           and a narrower content area than the preview showed. */
+        .sf-print-paper {
+          width: auto; max-width: none;
+          margin: 0; padding: 0;
+          box-shadow: none; min-height: 0;
+        }
       }` : ''}
     </style>
   </head><body>${toolbarHtml}${processedHtml}${toolbarClose}</body></html>`
