@@ -572,6 +572,22 @@ module.exports = function registerCommunicationHandlers() {
   // ── Term bill emails ─────────────────────────────────────────────────────────
 
   // Individual: email one student's term bill to the parent
+  // Preview the bill email exactly as it will be sent — nothing is dispatched
+  ipcMain.handle('email:preview-bill', (_, { student_id, term_id }) => {
+    const db       = getDb()
+    const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()
+    const data = getStudentBillData(db, student_id, term_id)
+    if (!data) return { ok: false, error: 'Student or term not found' }
+    if (!data.bills.length) return { ok: false, error: 'No bills generated for this student in the selected term' }
+    const html    = buildBillEmailHtml({ settings, data })
+    const subject = `School Fees Bill — ${data.term_name}, ${data.session_name} — ${data.student.last_name} ${data.student.first_name}`
+    return {
+      ok: true, html, subject,
+      to: data.student.parent_email || '',
+      email_enabled: settings?.email_enabled === 1,
+    }
+  })
+
   ipcMain.handle('email:send-bill', async (_, { student_id, term_id }) => {
     const db       = getDb()
     const settings = db.prepare('SELECT * FROM school_settings WHERE id=1').get()

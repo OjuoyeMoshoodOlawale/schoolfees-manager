@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { Plus, Pencil, Trash2, BookOpen, GripVertical } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, DataTable } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 // Preset Nigerian secondary school classes
 const PRESETS = [
@@ -160,7 +161,7 @@ export default function ClassesPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => setShowModal(false)}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onSubmit)}>
+            <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)}>
               {editing ? 'Save Changes' : 'Add Class'}
             </button>
           </>

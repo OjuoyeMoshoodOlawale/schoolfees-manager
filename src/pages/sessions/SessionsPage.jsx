@@ -4,6 +4,7 @@ import { toast } from 'react-toastify'
 import { Plus, Trash2, Check, ChevronDown, ChevronRight, Calendar, AlertCircle } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, StatusBadge } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
+import { playErrorSound } from '../../lib/sounds'
 
 const TERM_ORDER = ['First Term', 'Second Term', 'Third Term']
 
@@ -59,7 +60,7 @@ function TermRow({ term, isCurrent, onSetCurrent }) {
       </div>
 
       {editing && (
-        <form onSubmit={handleSubmit(save)} className="mt-3 flex items-end gap-3 flex-wrap">
+        <form onSubmit={handleSubmit(save, playErrorSound)} className="mt-3 flex items-end gap-3 flex-wrap">
           <Field label="Start date" >
             <input type="date" className="form-input" {...register('start_date')} />
           </Field>
@@ -252,7 +253,7 @@ export default function SessionsPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => { setShowAdd(false); reset() }}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onCreate)}>Create Session</button>
+            <button className="btn-primary btn" onClick={handleSubmit(onCreate, playErrorSound)}>Create Session</button>
           </>
         }
       >

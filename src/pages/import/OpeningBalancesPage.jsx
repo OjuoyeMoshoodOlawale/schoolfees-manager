@@ -1,19 +1,37 @@
 import { useEffect, useState, useRef } from 'react'
 import { toast } from 'react-toastify'
 import * as XLSX from 'xlsx'
-import { Upload, Download, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react'
+import { Upload, Download, CheckCircle2, AlertCircle, FileSpreadsheet, Lock, Unlock } from 'lucide-react'
 import { PageHeader, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 
 export default function OpeningBalancesPage() {
-  const { fmt } = useAuth()
+  const { fmt, isAdmin, user } = useAuth()
   const fileRef  = useRef()
   const [rows, setRows]       = useState([])
   const [result, setResult]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [term, setTerm]       = useState(null)
+  const [lockInfo, setLockInfo] = useState(null) // { locked, count }
 
-  useEffect(() => { window.api.getCurrentTerm().then(t => setTerm(t)) }, [])
+  const refreshLock = async (t) => {
+    if (!t) return
+    try { setLockInfo(await window.api.openingBalancesStatus({ term_id: t.id })) } catch {}
+  }
+
+  useEffect(() => {
+    window.api.getCurrentTerm().then(t => { setTerm(t); refreshLock(t) })
+  }, [])
+
+  const handleUnlock = async () => {
+    if (!isAdmin) { toast.error('Only an administrator can unlock opening balances'); return }
+    if (!window.confirm('Unlock opening balances for this term? This allows re-importing and overwriting existing balances.')) return
+    try {
+      await window.api.openingBalancesUnlock({ term_id: term.id, admin_username: user?.username })
+      toast.success('Opening balances unlocked')
+      refreshLock(term)
+    } catch (e) { toast.error(e.message) }
+  }
 
   const handleFile = (e) => {
     const file = e.target.files[0]
@@ -21,15 +39,26 @@ export default function OpeningBalancesPage() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       const wb   = XLSX.read(ev.target.result, { type: 'binary' })
-      const ws   = wb.Sheets[wb.SheetNames[0]]
-      const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
+      // Read EVERY sheet — the template has one tab per class
+      const data = wb.SheetNames.flatMap(sn =>
+        XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: '' })
+          .map(r => ({ ...r, _sheet: sn }))
+      )
+      const seenRegs = new Set()
+      const MAX_BALANCE = 10_000_000
       const parsed = data.map((r, i) => {
         const reg     = String(r['Reg Number'] || r['reg_number'] || r['RegNumber'] || '').trim()
+        // Accept "15,000" / "₦15000" by stripping non-numeric characters
+        const rawBal  = String(r['Opening Balance'] ?? r['Balance'] ?? r['Amount'] ?? 0).replace(/[₦,\s]/g, '')
         const name    = String(r['Student Name'] || r['Name'] || '').trim()
-        const balance = parseFloat(r['Opening Balance'] || r['Balance'] || r['Amount'] || 0)
+        const balance = parseFloat(rawBal || 0)
         const errors  = []
         if (!reg) errors.push('Reg Number required')
-        if (isNaN(balance) || balance < 0) errors.push('Balance must be a positive number')
+        if (isNaN(balance) || balance < 0) errors.push('Balance must be a non-negative number')
+        if (balance > MAX_BALANCE) errors.push(`Balance exceeds ₦${MAX_BALANCE.toLocaleString()} limit`)
+        const regKey = reg.toUpperCase()
+        if (reg && seenRegs.has(regKey)) errors.push('Duplicate Reg Number in file')
+        if (reg) seenRegs.add(regKey)
         return { _row: i + 2, reg_number: reg, name, balance, _valid: errors.length === 0, _errors: errors }
       }).filter(r => r.reg_number || r.name)
       setRows(parsed)
@@ -49,21 +78,47 @@ export default function OpeningBalancesPage() {
         term_id: term.id
       })
       setResult(res)
-      if (res.ok) toast.success(`${res.imported} balance${res.imported !== 1 ? 's' : ''} imported`)
+      if (res.ok) {
+        toast.success(`${res.imported} balance${res.imported !== 1 ? 's' : ''} imported — records are now locked`)
+        setRows([])            // hide the imported data from the screen
+        refreshLock(term)      // show the locked banner
+      }
       else toast.error(res.error)
     } catch(e) { toast.error(e.message) }
     finally { setLoading(false) }
   }
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['Reg Number', 'Student Name', 'Opening Balance'],
-      ['STU/2024/001', 'Ade Johnson', 15000],
-      ['STU/2024/002', 'Bola Smith',  8500],
-    ])
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Opening Balances')
-    XLSX.writeFile(wb, 'opening_balances_template.xlsx')
+  const downloadTemplate = async () => {
+    if (!term) { toast.error('No active term set'); return }
+    try {
+      const res = await window.api.openingBalancesTemplate({ term_id: term.id })
+      if (!res.ok) { toast.error(res.error || 'Could not build template'); return }
+      const wb = XLSX.utils.book_new()
+      if (!res.sheets.length) {
+        // No students yet — fall back to a sample sheet
+        const ws = XLSX.utils.aoa_to_sheet([
+          ['Reg Number', 'Student Name', 'Opening Balance'],
+          ['STU/2024/001', 'Ade Johnson', 15000],
+        ])
+        XLSX.utils.book_append_sheet(wb, ws, 'Opening Balances')
+      } else {
+        // One tab per class, pre-filled with every active student in that
+        // class. Existing balances appear so they can be reviewed/updated.
+        for (const sheet of res.sheets) {
+          const aoa = [
+            ['Reg Number', 'Student Name', 'Opening Balance'],
+            ...sheet.students.map(s => [s.reg_number, s.name, s.existing_balance]),
+          ]
+          const ws = XLSX.utils.aoa_to_sheet(aoa)
+          ws['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 16 }]
+          // Sheet names max 31 chars and no special chars
+          const tabName = sheet.class_name.replace(/[\\/?*[\]:]/g, '').slice(0, 31)
+          XLSX.utils.book_append_sheet(wb, ws, tabName || 'Class')
+        }
+      }
+      XLSX.writeFile(wb, `opening_balances_${(term.session_name || '').replace('/', '-')}_${term.name.replace(/\s/g, '')}.xlsx`)
+      toast.success('Template downloaded — one tab per class, all students pre-filled')
+    } catch (e) { toast.error(e.message) }
   }
 
   const validCount   = rows.filter(r => r._valid).length
@@ -88,6 +143,24 @@ export default function OpeningBalancesPage() {
         </div>
       )}
 
+      {lockInfo?.locked && (
+        <div className="mb-4 p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-3">
+          <Lock size={18} className="flex-shrink-0 mt-0.5 text-slate-500" />
+          <div className="flex-1 text-sm text-slate-700">
+            <p className="font-semibold">Opening balances are locked for this term.</p>
+            <p className="text-slate-500 mt-0.5">
+              {lockInfo.count} balance record{lockInfo.count !== 1 ? 's' : ''} imported. The data is hidden and
+              re-importing is blocked to prevent tampering. {isAdmin ? 'As an administrator you can unlock to re-import.' : 'Contact an administrator if changes are needed.'}
+            </p>
+          </div>
+          {isAdmin && (
+            <button className="btn btn-sm btn-secondary flex-shrink-0" onClick={handleUnlock}>
+              <Unlock size={13} /> Unlock
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Info */}
       <div className="card mb-5">
         <h3 className="text-sm font-semibold text-gray-700 mb-2">How it works</h3>
@@ -99,7 +172,8 @@ export default function OpeningBalancesPage() {
         </ul>
       </div>
 
-      {/* Upload */}
+      {/* Upload — hidden while balances are locked to prevent misuse */}
+      {!lockInfo?.locked && (
       <div className="card mb-5">
         <div
           className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition"
@@ -111,6 +185,7 @@ export default function OpeningBalancesPage() {
         </div>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
       </div>
+      )}
 
       {/* Preview */}
       {rows.length > 0 && (

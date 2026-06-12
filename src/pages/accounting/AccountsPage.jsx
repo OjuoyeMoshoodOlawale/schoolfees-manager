@@ -4,6 +4,7 @@ import { toast } from 'react-toastify'
 import { Plus, Pencil, Trash2, BookMarked } from 'lucide-react'
 import { PageHeader, DataTable, Modal, Confirm, Field, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
+import { playErrorSound } from '../../lib/sounds'
 
 const TYPES = ['asset','liability','equity','income','expense']
 const TYPE_COLORS = {
@@ -119,7 +120,7 @@ export default function AccountsPage() {
         title={editing ? `Edit: ${editing.name}` : 'New Account'}
         footer={<>
           <button className="btn-secondary btn" onClick={() => setShowModal(false)}>Cancel</button>
-          <button className="btn-primary btn" onClick={handleSubmit(onSubmit)}>{editing ? 'Save' : 'Create'}</button>
+          <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)}>{editing ? 'Save' : 'Create'}</button>
         </>}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">

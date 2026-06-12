@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { GraduationCap, Key, Wifi, WifiOff, CheckCircle2, Loader, Copy, Monitor } from 'lucide-react'
 import { Field } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 export default function ActivationScreen({ onActivated }) {
   const [loading, setLoading] = useState(false)
@@ -79,7 +80,7 @@ export default function ActivationScreen({ onActivated }) {
               <h2 className="font-semibold text-gray-900">License Activation</h2>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit, playErrorSound)} className="space-y-4">
               {/* Machine ID — client sends this to the vendor to get a key */}
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1.5">

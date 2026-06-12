@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { History, Zap, Plus, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { PageHeader, Spinner, Confirm, Modal, Field, DataTable, exportToExcel } from '../../components/ui'
 import { Download } from 'lucide-react'
+import { playErrorSound } from '../../lib/sounds'
 
 
 export default function CarryoverPage() {
@@ -268,7 +269,7 @@ export default function CarryoverPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => { setShowManual(false); reset() }}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onManualPost)}>Post Balance</button>
+            <button className="btn-primary btn" onClick={handleSubmit(onManualPost, playErrorSound)}>Post Balance</button>
           </>
         }
       >

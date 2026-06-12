@@ -4,6 +4,7 @@ import { toast } from 'react-toastify'
 import { Shield, Plus, Pencil, Trash2, Eye, EyeOff, UserCheck } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, DataTable, Spinner } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
+import { playErrorSound } from '../../lib/sounds'
 
 const ROLE_LABELS = {
   admin:  { label: 'Admin',  color: 'badge-blue',  desc: 'Full access — can manage everything' },
@@ -187,7 +188,7 @@ export default function UsersPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => setShowModal(false)}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onSubmit)}>
+            <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)}>
               {editing ? 'Save Changes' : 'Create User'}
             </button>
           </>
@@ -241,7 +242,7 @@ export default function UsersPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => { setShowPwdModal(false); pwdForm.reset() }}>Cancel</button>
-            <button className="btn-primary btn" onClick={pwdForm.handleSubmit(onChangePwd)}>Change Password</button>
+            <button className="btn-primary btn" onClick={pwdForm.handleSubmit(onChangePwd, playErrorSound)}>Change Password</button>
           </>
         }
       >

@@ -294,10 +294,23 @@ ipcMain.handle('adjustments:create', (_, data) => {
   const db  = getDb()
   const tid = data.term_id || db.prepare('SELECT id FROM terms WHERE is_current=1').get()?.id
   if (!tid) throw new Error('No current term set')
+
+  // ── Server-side validation: adjustments change what a student owes ────────
+  if (!data.student_id) throw new Error('No student specified')
+  if (!['discount', 'addition'].includes(data.type)) throw new Error('Adjustment type must be discount or addition')
+  if (!['fixed', 'percent'].includes(data.calc_mode)) throw new Error('Calculation mode must be fixed or percent')
+  const amt = Number(data.amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Adjustment amount must be greater than zero')
+  if (data.calc_mode === 'percent' && amt > 100) throw new Error('A percentage adjustment cannot exceed 100%')
+  if (data.calc_mode === 'fixed' && amt > 10_000_000) throw new Error('Adjustment amount is unreasonably large. Please check the figure.')
+  if (!data.reason || !String(data.reason).trim()) throw new Error('A reason is required for every adjustment (audit trail)')
+  const student = db.prepare('SELECT id FROM students WHERE id=?').get([data.student_id])
+  if (!student) throw new Error('Student not found')
+
   const info = db.prepare(`
     INSERT INTO bill_adjustments (student_id,term_id,type,calc_mode,amount,reason,created_by)
     VALUES (?,?,?,?,?,?,?)
-  `).run([data.student_id, tid, data.type, data.calc_mode, data.amount, data.reason, data.created_by || 'admin'])
+  `).run([data.student_id, tid, data.type, data.calc_mode, amt, String(data.reason).trim(), data.created_by || 'admin'])
   return { id: info.lastInsertRowid }
 })
 
@@ -321,17 +334,33 @@ ipcMain.handle('carryover:list', (_, { to_term_id }) => {
 
 ipcMain.handle('carryover:post', (_, { student_id, from_term_id, to_term_id, balance_amount }) => {
   const db = getDb()
+
+  // ── Validation: carryovers add to what a student owes ─────────────────────
+  if (!student_id) throw new Error('No student specified')
+  if (!to_term_id) throw new Error('No destination term specified')
+  const bal = Number(balance_amount)
+  if (!Number.isFinite(bal) || bal < 0) throw new Error('Balance must be a non-negative number')
+  if (bal > 10_000_000) throw new Error('Balance is unreasonably large. Please check the figure.')
+  const student = db.prepare('SELECT id FROM students WHERE id=?').get([student_id])
+  if (!student) throw new Error('Student not found')
+  // Carryover must move forward in time when a source term is given
+  if (from_term_id && from_term_id !== to_term_id) {
+    const { compareTerms } = require('../lib/termOrder')
+    const cmp = compareTerms(db, from_term_id, to_term_id)
+    if (cmp !== null && cmp >= 0) throw new Error('Carryover must go from an earlier term to a later one')
+  }
+
   const existing = db.prepare('SELECT id FROM previous_term_balance WHERE student_id=? AND to_term_id=?').get([student_id, to_term_id])
   if (existing) {
-    db.prepare('UPDATE previous_term_balance SET balance_amount=?,from_term_id=? WHERE id=?').run([balance_amount, from_term_id, existing.id])
+    db.prepare('UPDATE previous_term_balance SET balance_amount=?,from_term_id=? WHERE id=?').run([bal, from_term_id || to_term_id, existing.id])
     return { id: existing.id }
   }
-  const info = db.prepare('INSERT INTO previous_term_balance (student_id,from_term_id,to_term_id,balance_amount) VALUES (?,?,?,?)').run([student_id, from_term_id, to_term_id, balance_amount])
+  const info = db.prepare('INSERT INTO previous_term_balance (student_id,from_term_id,to_term_id,balance_amount) VALUES (?,?,?,?)').run([student_id, from_term_id || to_term_id, to_term_id, bal])
   return { id: info.lastInsertRowid }
 })
 
 ipcMain.handle('carryover:delete', (_, id) => {
-  getDb().prepare('DELETE FROM previous_term_balance WHERE id=?').run(id)
+  getDb().prepare('DELETE FROM previous_term_balance WHERE id=?').run([id])
   return { ok: true }
 })
 
@@ -389,9 +418,39 @@ ipcMain.handle('bills:regenerate-student', (_, { student_id, term_id }) => {
 })
 
 // ── Import Opening Balances ───────────────────────────────────────────────────
-ipcMain.handle('import:opening-balances', (_, { rows, term_id }) => {
+ipcMain.handle('import:opening-balances', (_, { rows, term_id, posted_by = 'admin' }) => {
   const db = getDb()
   if (!term_id) return { ok: false, error: 'No term specified' }
+
+  // ── Misuse protection: once balances are imported and locked, re-importing
+  //    requires an admin to unlock first (Settings → unlock opening balances).
+  const locked = db.prepare('SELECT value FROM app_state WHERE key=?')
+    .get([`opening_balances_locked_${term_id}`])?.value === '1'
+  if (locked) {
+    return { ok: false, error: 'Opening balances for this term are locked. An administrator must unlock them before re-importing.' }
+  }
+
+  // ── Server-side validation (never trust the renderer payload) ─────────────
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'No rows to import' }
+  const MAX_BALANCE = 10_000_000 // ₦10m per student — sanity ceiling
+  const seen = new Set()
+  for (const row of rows) {
+    const bal = Number(row.balance)
+    if (!row.reg_number || typeof row.reg_number !== 'string') {
+      return { ok: false, error: `Row ${row._row || '?'}: missing registration number` }
+    }
+    if (!Number.isFinite(bal) || bal < 0) {
+      return { ok: false, error: `Row ${row._row || '?'} (${row.reg_number}): balance must be a non-negative number` }
+    }
+    if (bal > MAX_BALANCE) {
+      return { ok: false, error: `Row ${row._row || '?'} (${row.reg_number}): balance ₦${bal.toLocaleString()} exceeds the ₦${MAX_BALANCE.toLocaleString()} sanity limit` }
+    }
+    const key = row.reg_number.trim().toUpperCase()
+    if (seen.has(key)) {
+      return { ok: false, error: `Duplicate registration number in file: ${row.reg_number}` }
+    }
+    seen.add(key)
+  }
 
   let imported = 0, skipped = 0
   const errors = []
@@ -405,19 +464,71 @@ ipcMain.handle('import:opening-balances', (_, { rows, term_id }) => {
         skipped++
         continue
       }
+      const bal = Number(row.balance)
+      // Zero balances are skipped — nothing to carry
+      if (bal === 0) { skipped++; continue }
+      // from_term_id is NOT NULL; a manual opening balance has no real source
+      // term, so we self-reference the destination term as the sentinel for
+      // "manually imported at this term".
       db.prepare(`INSERT INTO previous_term_balance
         (student_id,from_term_id,to_term_id,balance_amount,carried_over_at)
-        VALUES (?,NULL,?,?,datetime('now'))
+        VALUES (?,?,?,?,datetime('now'))
         ON CONFLICT(student_id,to_term_id) DO UPDATE SET
           balance_amount=excluded.balance_amount,
           carried_over_at=datetime('now')`)
-        .run([student.id, term_id, row.balance])
+        .run([student.id, term_id, term_id, bal])
       imported++
     }
+    // Audit trail + auto-lock so the import can't be silently re-run
+    db.prepare(`INSERT INTO audit_log (action, table_name, record_id, details)
+      VALUES ('OPENING_BALANCES_IMPORTED','previous_term_balance',?,?)`)
+      .run([term_id, JSON.stringify({ imported, skipped, by: posted_by })])
+    db.prepare("INSERT OR REPLACE INTO app_state (key,value) VALUES (?, '1')")
+      .run([`opening_balances_locked_${term_id}`])
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); return { ok: false, error: e.message } }
 
-  return { ok: true, imported, skipped, errors: errors.slice(0, 20) }
+  return { ok: true, imported, skipped, locked: true, errors: errors.slice(0, 20) }
+})
+
+// Lock status + admin unlock for opening balances
+ipcMain.handle('import:opening-balances-status', (_, { term_id }) => {
+  const db = getDb()
+  const locked = db.prepare('SELECT value FROM app_state WHERE key=?')
+    .get([`opening_balances_locked_${term_id}`])?.value === '1'
+  const count = db.prepare('SELECT COUNT(*) c FROM previous_term_balance WHERE to_term_id=?')
+    .get([term_id])?.c || 0
+  return { locked, count }
+})
+
+ipcMain.handle('import:opening-balances-unlock', (_, { term_id, admin_username }) => {
+  const db = getDb()
+  db.prepare('DELETE FROM app_state WHERE key=?').run([`opening_balances_locked_${term_id}`])
+  db.prepare(`INSERT INTO audit_log (action, table_name, record_id, details)
+    VALUES ('OPENING_BALANCES_UNLOCKED','app_state',?,?)`)
+    .run([term_id, JSON.stringify({ by: admin_username || 'admin' })])
+  return { ok: true }
+})
+
+// Build a template workbook payload: every active student, grouped per class
+ipcMain.handle('import:opening-balances-template', (_, { term_id }) => {
+  const db = getDb()
+  if (!term_id) return { ok: false, error: 'No term specified' }
+  const classes = db.prepare(`
+    SELECT DISTINCT c.id, c.name, c.level FROM classes c
+    JOIN student_status ss ON ss.class_id = c.id AND ss.term_id = ? AND ss.status='active'
+    ORDER BY c.level`).all([term_id])
+  const sheets = classes.map(cls => ({
+    class_name: cls.name,
+    students: db.prepare(`
+      SELECT s.reg_number, s.last_name || ' ' || s.first_name AS name,
+             COALESCE(ptb.balance_amount, '') AS existing_balance
+      FROM students s
+      JOIN student_status ss ON ss.student_id = s.id AND ss.term_id = ? AND ss.class_id = ? AND ss.status='active'
+      LEFT JOIN previous_term_balance ptb ON ptb.student_id = s.id AND ptb.to_term_id = ?
+      ORDER BY s.last_name, s.first_name`).all([term_id, cls.id, term_id]),
+  }))
+  return { ok: true, sheets }
 })
 
 } // end register_billingHandlers

@@ -29,6 +29,7 @@
     "react-hook-form": "^7.51.3",
     "react-router-dom": "^6.22.3",
     "react-toastify": "^10.0.5",
+    "recharts": "^3.8.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -64,12 +65,17 @@
       {
         "from": "database",
         "to": "database",
-        "filter": ["**/*", "!*.lock"]
+        "filter": [
+          "**/*",
+          "!*.lock"
+        ]
       },
       {
         "from": "resources/guides",
         "to": "guides",
-        "filter": ["**/*.pdf"]
+        "filter": [
+          "**/*.pdf"
+        ]
       }
     ],
     "asar": true,
@@ -80,7 +86,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build-resources/icon.ico",

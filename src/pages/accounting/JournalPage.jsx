@@ -6,6 +6,7 @@ import { PageHeader, Modal, Spinner, Field, exportToExcel } from '../../componen
 import { useAuth } from '../../context/AuthContext'
 import { fmtDate, todayISO } from '../../lib/utils'
 import { Download } from 'lucide-react'
+import { playErrorSound } from '../../lib/sounds'
 
 export default function JournalPage() {
   const { fmt, user } = useAuth()
@@ -116,7 +117,7 @@ export default function JournalPage() {
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Post Journal Entry" size="lg"
         footer={<>
           <button className="btn-secondary btn" onClick={() => setShowModal(false)}>Cancel</button>
-          <button className="btn-primary btn" onClick={handleSubmit(onSubmit)} disabled={saving || !isBalanced}>
+          <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)} disabled={saving || !isBalanced}>
             {saving ? 'Posting…' : 'Post Entry'}
           </button>
         </>}>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import InsightsDashboard from './InsightsDashboard'
 import { useNavigate } from 'react-router-dom'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
@@ -256,6 +257,7 @@ function ExecutiveDashboard({ data, fmt, navigate }) {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
 const MODES = [
+  { id:'insights',   label:'Insights',   icon:BarChart2,       desc:'Interactive analytics — click anything to drill down' },
   { id:'operations', label:'Operations', icon:Zap,             desc:'Daily fees & payments' },
   { id:'accounting', label:'Accounting', icon:Scale,           desc:'Ledger & journals' },
   { id:'executive',  label:'Executive',  icon:Briefcase,       desc:'Summary overview' },
@@ -318,6 +320,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {mode === 'insights'   && <InsightsDashboard fmt={fmt}/>}
       {mode === 'operations' && <OperationsDashboard data={data} setup={setup} fmt={fmt} navigate={navigate}/>}
       {mode === 'accounting' && <AccountingDashboard data={data} fmt={fmt} navigate={navigate}/>}
       {mode === 'executive'  && <ExecutiveDashboard  data={data} fmt={fmt} navigate={navigate}/>}

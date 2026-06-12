@@ -4,6 +4,7 @@ import { toast } from 'react-toastify'
 import { GraduationCap, LogIn, Eye, EyeOff, Lock, KeyRound, Copy, CheckCircle2, X } from 'lucide-react'
 import { WebAutomateMark } from '../../components/WebAutomateMark'
 import { Field } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 export default function LoginScreen({ schoolName, logoPath, onLogin }) {
   const [loading, setLoading]   = useState(false)
@@ -61,7 +62,7 @@ export default function LoginScreen({ schoolName, logoPath, onLogin }) {
             <h2 className="font-semibold text-gray-800">Staff Login</h2>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit, playErrorSound)} className="space-y-4">
             <Field label="Username" required error={errors.username?.message}>
               <input
                 className="form-input"

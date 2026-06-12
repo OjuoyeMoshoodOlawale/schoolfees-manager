@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { Receipt, Search, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { PageHeader, Field, Spinner } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 
 export default function PostPaymentPage() {
@@ -239,7 +240,7 @@ export default function PostPaymentPage() {
         {selectedStudent && (
           <div className="card">
             <h2 className="text-sm font-semibold text-gray-700 mb-4">2. Payment Details</h2>
-            <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
+            <form className="space-y-4" onSubmit={handleSubmit(onSubmit, playErrorSound)}>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <span className="text-sm text-gray-600">Receipt Number</span>
                 <span className="font-mono font-semibold text-gray-900 text-sm">{receiptNo}</span>

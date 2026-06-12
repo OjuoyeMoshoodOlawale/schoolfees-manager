@@ -825,3 +825,201 @@ ipcMain.handle('reports:payment-audit', (_, { term_id, include_reversed = true }
     ORDER BY p.created_at DESC
   `).all([tid])
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INSIGHTS DASHBOARD — rich analytics + click-to-drill-down
+// ═══════════════════════════════════════════════════════════════════════════
+ipcMain.handle('reports:insights', () => {
+  const db = getDb()
+  const term = db.prepare('SELECT t.*, s.name as session_name FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.is_current=1').get()
+  if (!term) return null
+  const tid = term.id
+
+  // ── KPI headline numbers ────────────────────────────────────────────────
+  const totalBilled = db.prepare(`
+    SELECT COALESCE(SUM(sb.amount),0) t FROM student_bills sb WHERE sb.term_id=? AND sb.status NOT IN ('waived','frozen')`).get([tid]).t
+  const adjNet = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN type='discount' THEN -amount ELSE amount END),0) t
+    FROM bill_adjustments WHERE term_id=? AND calc_mode!='percent'`).get([tid]).t
+  const carryover = db.prepare('SELECT COALESCE(SUM(balance_amount),0) t FROM previous_term_balance WHERE to_term_id=?').get([tid]).t
+  const totalPaid = db.prepare('SELECT COALESCE(SUM(amount_paid),0) t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0').get([tid]).t
+  const todayPaid = db.prepare(`SELECT COALESCE(SUM(amount_paid),0) t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0 AND payment_date=date('now','localtime')`).get([tid]).t
+  const weekPaid  = db.prepare(`SELECT COALESCE(SUM(amount_paid),0) t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0 AND payment_date>=date('now','localtime','-6 days')`).get([tid]).t
+  const monthPaid = db.prepare(`SELECT COALESCE(SUM(amount_paid),0) t FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0 AND payment_date>=date('now','localtime','start of month')`).get([tid]).t
+  const totalStudents = db.prepare(`SELECT COUNT(*) c FROM student_status WHERE term_id=? AND status='active'`).get([tid]).c
+
+  // ── Daily collection trend (last 60 days, gaps filled client-side) ──────
+  const dailyTrend = db.prepare(`
+    SELECT payment_date as day, SUM(amount_paid) total, COUNT(*) n
+    FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0
+      AND payment_date >= date('now','localtime','-59 days')
+    GROUP BY payment_date ORDER BY payment_date`).all([tid])
+
+  // ── Payment method mix ───────────────────────────────────────────────────
+  const methodMix = db.prepare(`
+    SELECT payment_method method, SUM(amount_paid) total, COUNT(*) n
+    FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0
+    GROUP BY payment_method ORDER BY total DESC`).all([tid])
+
+  // ── Per-class billed vs paid ─────────────────────────────────────────────
+  const classCollection = db.prepare(`
+    SELECT c.id class_id, c.name class_name,
+      COUNT(DISTINCT ss.student_id) students,
+      COALESCE((SELECT SUM(sb.amount) FROM student_bills sb
+        JOIN student_status s2 ON s2.student_id=sb.student_id AND s2.term_id=sb.term_id
+        WHERE sb.term_id=? AND s2.class_id=c.id AND sb.status NOT IN ('waived','frozen')),0) billed,
+      COALESCE((SELECT SUM(p.amount_paid) FROM payments p
+        JOIN student_status s3 ON s3.student_id=p.student_id AND s3.term_id=p.term_id
+        WHERE p.term_id=? AND s3.class_id=c.id AND p.is_reversed=0 AND p.amount_paid>0),0) paid
+    FROM classes c
+    JOIN student_status ss ON ss.class_id=c.id AND ss.term_id=? AND ss.status='active'
+    GROUP BY c.id ORDER BY c.level`).all([tid, tid, tid])
+
+  // ── Per-student balances → debt buckets, top debtors, segments ──────────
+  const perStudent = db.prepare(`
+    SELECT s.id, s.first_name, s.last_name, s.reg_number, s.boarding_type, s.entry_type, s.gender,
+      ss.class_id, c.name class_name,
+      COALESCE((SELECT SUM(amount) FROM student_bills WHERE student_id=s.id AND term_id=? AND status NOT IN ('waived','frozen')),0)
+        + COALESCE((SELECT SUM(balance_amount) FROM previous_term_balance WHERE student_id=s.id AND to_term_id=?),0) AS expected,
+      COALESCE((SELECT SUM(amount_paid) FROM payments WHERE student_id=s.id AND term_id=? AND is_reversed=0 AND amount_paid>0),0) AS paid
+    FROM students s
+    JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.status='active'
+    JOIN classes c ON c.id=ss.class_id`).all([tid, tid, tid, tid])
+
+  const buckets = { paid_full: 0, under_10k: 0, k10_50: 0, k50_100: 0, over_100k: 0 }
+  const segAgg = {}
+  const segAdd = (key, expected, paid) => {
+    if (!segAgg[key]) segAgg[key] = { billed: 0, paid: 0, students: 0 }
+    segAgg[key].billed += expected; segAgg[key].paid += paid; segAgg[key].students++
+  }
+  let debtors = []
+  for (const st of perStudent) {
+    const bal = st.expected - st.paid
+    if (bal <= 0) buckets.paid_full++
+    else if (bal < 10000) buckets.under_10k++
+    else if (bal < 50000) buckets.k10_50++
+    else if (bal < 100000) buckets.k50_100++
+    else buckets.over_100k++
+    if (bal > 0) debtors.push({ ...st, balance: bal })
+    segAdd(st.boarding_type === 'boarding' ? 'Boarding' : 'Day', st.expected, st.paid)
+    segAdd(st.entry_type === 'new' ? 'New students' : 'Returning', st.expected, st.paid)
+  }
+  debtors.sort((a, b) => b.balance - a.balance)
+  const topDebtors = debtors.slice(0, 10)
+  const segments = Object.entries(segAgg).map(([label, v]) => ({
+    label, ...v, pct: v.billed > 0 ? Math.round(v.paid / v.billed * 100) : 0,
+  }))
+
+  // ── Cashier performance ──────────────────────────────────────────────────
+  const cashierStats = db.prepare(`
+    SELECT posted_by cashier, SUM(amount_paid) total, COUNT(*) n
+    FROM payments WHERE term_id=? AND is_reversed=0 AND amount_paid>0
+    GROUP BY posted_by ORDER BY total DESC LIMIT 8`).all([tid])
+
+  // ── Reversals + discounts headline ───────────────────────────────────────
+  const reversals = db.prepare(`
+    SELECT COUNT(*) n, COALESCE(SUM(ABS(amount_paid)),0) total
+    FROM payments WHERE term_id=? AND amount_paid<0`).get([tid])
+  const discounts = db.prepare(`
+    SELECT COUNT(*) n, COALESCE(SUM(amount),0) total
+    FROM bill_adjustments WHERE term_id=? AND type='discount' AND calc_mode!='percent'`).get([tid])
+
+  const expectedTotal = totalBilled + adjNet + carryover
+  return {
+    term,
+    kpis: {
+      totalBilled, adjNet, carryover, expectedTotal, totalPaid,
+      balance: Math.max(expectedTotal - totalPaid, 0),
+      collectionPct: expectedTotal > 0 ? Math.round(totalPaid / expectedTotal * 100) : 0,
+      todayPaid, weekPaid, monthPaid, totalStudents,
+      debtorCount: debtors.length,
+      reversals, discounts,
+    },
+    dailyTrend, methodMix, classCollection,
+    debtBuckets: buckets, topDebtors, segments, cashierStats,
+  }
+})
+
+// Drill-down: returns the detail rows behind any clicked chart element
+ipcMain.handle('reports:insights-drill', (_, { type, key }) => {
+  const db = getDb()
+  const term = db.prepare('SELECT * FROM terms WHERE is_current=1').get()
+  if (!term) return { rows: [] }
+  const tid = term.id
+
+  if (type === 'day') {
+    // All payments on a given date
+    return { rows: db.prepare(`
+      SELECT p.id, p.receipt_number, p.amount_paid, p.payment_method, p.posted_by,
+             s.first_name, s.last_name, s.reg_number, c.name class_name
+      FROM payments p
+      JOIN students s ON s.id=p.student_id
+      LEFT JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=p.term_id
+      LEFT JOIN classes c ON c.id=ss.class_id
+      WHERE p.term_id=? AND p.payment_date=? AND p.is_reversed=0 AND p.amount_paid>0
+      ORDER BY p.id DESC`).all([tid, key]) }
+  }
+  if (type === 'method') {
+    return { rows: db.prepare(`
+      SELECT p.id, p.receipt_number, p.amount_paid, p.payment_date, p.posted_by,
+             s.first_name, s.last_name, s.reg_number, c.name class_name
+      FROM payments p
+      JOIN students s ON s.id=p.student_id
+      LEFT JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=p.term_id
+      LEFT JOIN classes c ON c.id=ss.class_id
+      WHERE p.term_id=? AND p.payment_method=? AND p.is_reversed=0 AND p.amount_paid>0
+      ORDER BY p.payment_date DESC, p.id DESC LIMIT 100`).all([tid, key]) }
+  }
+  if (type === 'class') {
+    // Per-student fee status inside one class
+    return { rows: db.prepare(`
+      SELECT s.id, s.first_name, s.last_name, s.reg_number,
+        COALESCE((SELECT SUM(amount) FROM student_bills WHERE student_id=s.id AND term_id=? AND status NOT IN ('waived','frozen')),0)
+          + COALESCE((SELECT SUM(balance_amount) FROM previous_term_balance WHERE student_id=s.id AND to_term_id=?),0) AS expected,
+        COALESCE((SELECT SUM(amount_paid) FROM payments WHERE student_id=s.id AND term_id=? AND is_reversed=0 AND amount_paid>0),0) AS paid
+      FROM students s
+      JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.status='active' AND ss.class_id=?
+      ORDER BY (expected-paid) DESC`).all([tid, tid, tid, tid, Number(key)]) }
+  }
+  if (type === 'cashier') {
+    return { rows: db.prepare(`
+      SELECT p.id, p.receipt_number, p.amount_paid, p.payment_date, p.payment_method,
+             s.first_name, s.last_name, s.reg_number
+      FROM payments p JOIN students s ON s.id=p.student_id
+      WHERE p.term_id=? AND p.posted_by=? AND p.is_reversed=0 AND p.amount_paid>0
+      ORDER BY p.payment_date DESC, p.id DESC LIMIT 100`).all([tid, key]) }
+  }
+  if (type === 'bucket') {
+    // Debtors whose balance falls in the chosen bucket
+    const ranges = { under_10k: [0.01, 9999.99], k10_50: [10000, 49999.99], k50_100: [50000, 99999.99], over_100k: [100000, 1e12] }
+    const [lo, hi] = ranges[key] || [0.01, 1e12]
+    const all = db.prepare(`
+      SELECT s.id, s.first_name, s.last_name, s.reg_number, c.name class_name,
+        COALESCE((SELECT SUM(amount) FROM student_bills WHERE student_id=s.id AND term_id=? AND status NOT IN ('waived','frozen')),0)
+          + COALESCE((SELECT SUM(balance_amount) FROM previous_term_balance WHERE student_id=s.id AND to_term_id=?),0) AS expected,
+        COALESCE((SELECT SUM(amount_paid) FROM payments WHERE student_id=s.id AND term_id=? AND is_reversed=0 AND amount_paid>0),0) AS paid
+      FROM students s
+      JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.status='active'
+      JOIN classes c ON c.id=ss.class_id`).all([tid, tid, tid, tid])
+    return { rows: all.map(r => ({ ...r, balance: r.expected - r.paid }))
+      .filter(r => r.balance >= lo && r.balance <= hi)
+      .sort((a, b) => b.balance - a.balance).slice(0, 150) }
+  }
+  if (type === 'segment') {
+    const all = db.prepare(`
+      SELECT s.id, s.first_name, s.last_name, s.reg_number, s.boarding_type, s.entry_type, c.name class_name,
+        COALESCE((SELECT SUM(amount) FROM student_bills WHERE student_id=s.id AND term_id=? AND status NOT IN ('waived','frozen')),0)
+          + COALESCE((SELECT SUM(balance_amount) FROM previous_term_balance WHERE student_id=s.id AND to_term_id=?),0) AS expected,
+        COALESCE((SELECT SUM(amount_paid) FROM payments WHERE student_id=s.id AND term_id=? AND is_reversed=0 AND amount_paid>0),0) AS paid
+      FROM students s
+      JOIN student_status ss ON ss.student_id=s.id AND ss.term_id=? AND ss.status='active'
+      JOIN classes c ON c.id=ss.class_id`).all([tid, tid, tid, tid])
+    const match = r =>
+      key === 'Boarding' ? r.boarding_type === 'boarding' :
+      key === 'Day' ? r.boarding_type !== 'boarding' :
+      key === 'New students' ? r.entry_type === 'new' : r.entry_type !== 'new'
+    return { rows: all.filter(match).map(r => ({ ...r, balance: r.expected - r.paid }))
+      .sort((a, b) => b.balance - a.balance).slice(0, 150) }
+  }
+  return { rows: [] }
+})

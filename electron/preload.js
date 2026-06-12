@@ -82,6 +82,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // ── Reports
   getDashboardData:   ()     => ipcRenderer.invoke('reports:dashboard'),
+  getInsights:        ()     => ipcRenderer.invoke('reports:insights'),
+  getInsightsDrill:   (d)    => ipcRenderer.invoke('reports:insights-drill', d),
   getAccountReport:   (f)    => ipcRenderer.invoke('reports:account', f),
   getCollectionSummary: (f)  => ipcRenderer.invoke('reports:collection-summary', f),
   getClassFeeStatus:  (f)    => ipcRenderer.invoke('reports:class-fee-status', f),
@@ -113,6 +115,9 @@ contextBridge.exposeInMainWorld('api', {
   // ── Import
   importStudents:     (d)    => ipcRenderer.invoke('import:students', d),
   importOpeningBalances: (d) => ipcRenderer.invoke('import:opening-balances', d),
+  openingBalancesStatus:   (d) => ipcRenderer.invoke('import:opening-balances-status', d),
+  openingBalancesUnlock:   (d) => ipcRenderer.invoke('import:opening-balances-unlock', d),
+  openingBalancesTemplate: (d) => ipcRenderer.invoke('import:opening-balances-template', d),
 
   // ── Communications
   listSmsProviders:   ()     => ipcRenderer.invoke('sms:list-providers'),
@@ -126,6 +131,7 @@ contextBridge.exposeInMainWorld('api', {
   sendEmail:          (d)    => ipcRenderer.invoke('email:send', d),
   sendEmailReceipt:   (d)    => ipcRenderer.invoke('email:send-receipt', d),
   sendBillEmail:      (d)    => ipcRenderer.invoke('email:send-bill', d),
+  previewBillEmail:   (d)    => ipcRenderer.invoke('email:preview-bill', d),
   sendBillEmailsBulk: (d)    => ipcRenderer.invoke('email:send-bills-bulk', d),
   backupNow:          ()     => ipcRenderer.invoke('backup:now'),
   listLocalBackups:   ()     => ipcRenderer.invoke('backup:list-local'),

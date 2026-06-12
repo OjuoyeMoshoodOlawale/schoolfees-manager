@@ -5,6 +5,7 @@ import {
   ArrowLeft, Receipt, Printer, FileText, RefreshCw, Mail
 } from 'lucide-react'
 import { PageHeader, Confirm, Spinner } from '../../components/ui'
+import EmailPreviewModal from '../../components/EmailPreviewModal'
 import { useAuth } from '../../context/AuthContext'
 import { fmtDate, buildBillSlipHtml, printCleanHtml } from '../../lib/utils'
 import AdjustmentModal from './AdjustmentModal'
@@ -98,16 +99,34 @@ export default function StudentBillPage() {
     }
   }
 
-  // Email the term bill to the parent
+  // Email the term bill to the parent — preview first, send on confirm
+  const [emailPreview, setEmailPreview] = useState(null) // { to, subject, html }
   const handleEmailBill = async () => {
     if (!summary?.student) return
+    setEmailing(true)
+    try {
+      const p = await window.api.previewBillEmail({
+        student_id: Number(id),
+        term_id: currentTerm?.id,
+      })
+      if (!p.ok) { toast.error(p.error || 'Could not build email preview'); return }
+      if (!p.email_enabled) { toast.error('Email sending is disabled in Settings'); return }
+      setEmailPreview(p)   // show the preview modal — user confirms with Send
+    } catch (e) { toast.error(e.message) }
+    finally { setEmailing(false) }
+  }
+
+  const confirmSendEmail = async () => {
     setEmailing(true)
     try {
       const r = await window.api.sendBillEmail({
         student_id: Number(id),
         term_id: currentTerm?.id,
       })
-      if (r.ok) toast.success(`Bill emailed to ${summary.student.parent_email || 'parent'}!`)
+      if (r.ok) {
+        toast.success(`Bill emailed to ${emailPreview?.to || 'parent'}!`)
+        setEmailPreview(null)
+      }
       else toast.error(r.error || 'Failed to send bill email')
     } catch (e) { toast.error(e.message) }
     finally { setEmailing(false) }
@@ -139,7 +158,7 @@ export default function StudentBillPage() {
             </button>
             <button className="btn-secondary btn btn-sm" onClick={handleEmailBill} disabled={emailing}
               title={summary?.student?.parent_email ? `Email to ${summary.student.parent_email}` : 'No parent email on file'}>
-              <Mail size={14} /> {emailing ? 'Sending…' : 'Email Bill'}
+              <Mail size={14} /> {emailing ? 'Working…' : 'Email Bill'}
             </button>
             <button className="btn-secondary btn btn-sm" onClick={() => navigate(`/billing/student/${id}/statement`)}>
               <FileText size={14} /> Statement
@@ -346,6 +365,15 @@ export default function StudentBillPage() {
         danger
         title="Remove Adjustment"
         message={`Remove this ${deleteAdj?.type} adjustment? (${deleteAdj?.reason})`}
+      />
+      <EmailPreviewModal
+        open={!!emailPreview}
+        to={emailPreview?.to}
+        subject={emailPreview?.subject}
+        html={emailPreview?.html}
+        sending={emailing}
+        onSend={confirmSendEmail}
+        onClose={() => setEmailPreview(null)}
       />
     </div>
   )

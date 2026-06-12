@@ -6,6 +6,7 @@ import {
   ArrowRight, ArrowLeft, GraduationCap, LogIn
 } from 'lucide-react'
 import { Field } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 const STEPS = [
   { id: 'school',  label: 'School Info',    icon: Building2  },
@@ -99,7 +100,7 @@ export default function SetupWizard({ activation, onComplete }) {
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* ── Step 0: School Info ── */}
           {step === 0 && (
-            <form onSubmit={schoolForm.handleSubmit(saveSchool)}>
+            <form onSubmit={schoolForm.handleSubmit(saveSchool, playErrorSound)}>
               <div className="p-6 border-b border-gray-100">
                 <div className="flex items-center gap-2 mb-1">
                   <Building2 size={16} className="text-blue-600" />
@@ -164,7 +165,7 @@ export default function SetupWizard({ activation, onComplete }) {
 
           {/* ── Step 1: Admin Account ── */}
           {step === 1 && (
-            <form onSubmit={adminForm.handleSubmit(saveAdmin)}>
+            <form onSubmit={adminForm.handleSubmit(saveAdmin, playErrorSound)}>
               <div className="p-6 border-b border-gray-100">
                 <div className="flex items-center gap-2 mb-1">
                   <UserPlus size={16} className="text-blue-600" />

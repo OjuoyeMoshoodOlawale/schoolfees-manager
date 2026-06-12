@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 import { Plus, Pencil, Trash2, ListChecks, Zap, Lock } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, DataTable } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 export default function FeeItemsPage() {
   const [items, setItems]             = useState([])
@@ -162,7 +163,7 @@ export default function FeeItemsPage() {
         footer={
           <>
             <button className="btn-secondary btn" onClick={() => setShowModal(false)}>Cancel</button>
-            <button className="btn-primary btn" onClick={handleSubmit(onSubmit)}>
+            <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)}>
               {editing ? 'Save Changes' : 'Create Fee Item'}
             </button>
           </>

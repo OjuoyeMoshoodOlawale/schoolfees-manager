@@ -6,6 +6,7 @@ import {
   AlertCircle, ChevronDown, Filter
 } from 'lucide-react'
 import { PageHeader, Modal, Confirm, Field, Spinner, DataTable } from '../../components/ui'
+import { playErrorSound } from '../../lib/sounds'
 
 const fmt = (n) => n == null ? '—' : `₦${Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`
 
@@ -47,7 +48,7 @@ function ConfigForm({ feeItems, existingItems, editing, onSubmit, onCancel }) {
   ).filter(f => f.is_active)
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit, playErrorSound)} className="space-y-4">
       <Field label="Fee Item" required error={errors.fee_item_id?.message}>
         <select className="form-select" disabled={!!editing}
           {...register('fee_item_id', { required: 'Select a fee item', valueAsNumber: true })}>

@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 import { Upload, User, ArrowLeft, Save, AlertCircle } from 'lucide-react'
 import { Field, Spinner, PageHeader } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
+import { playErrorSound } from '../../lib/sounds'
 
 export default function StudentForm() {
   const { id } = useParams()
@@ -119,7 +120,7 @@ export default function StudentForm() {
             <button className="btn-secondary btn" onClick={() => navigate('/students')}>
               <ArrowLeft size={15} /> Back
             </button>
-            <button className="btn-primary btn" onClick={handleSubmit(onSubmit)}
+            <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)}
               disabled={saving || atLimit}>
               <Save size={15} /> {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Register Student'}
             </button>
@@ -149,7 +150,7 @@ export default function StudentForm() {
         </div>
       )}
 
-      <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+      <form className="space-y-5" onSubmit={handleSubmit(onSubmit, playErrorSound)}>
 
         {/* Photo + reg number */}
         <div className="card flex items-start gap-6">

@@ -170,6 +170,14 @@ ipcMain.handle('expenses:get', (_, id) => {
 
 safeHandle('expenses:save', (_, d) => {
   const db = getDb()
+
+  // ── Validation: expenses move money out of the school ──────────────────────
+  const amt = Number(d.amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Expense amount must be greater than zero')
+  if (amt > 100_000_000) throw new Error('Expense amount is unreasonably large. Please check the figure.')
+  if (!d.description || !String(d.description).trim()) throw new Error('A description is required for every expense')
+  if (!d.expense_date) throw new Error('Expense date is required')
+
   const fields = ['category_id','supplier_id','description','amount','expense_date',
                   'paid_from','payment_reference','notes','created_by']
   const vals   = fields.map(f => d[f] ?? null)

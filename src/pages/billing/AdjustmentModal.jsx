@@ -35,6 +35,8 @@ export default function AdjustmentModal({ open, onClose, studentId, billTotal, o
     const e = {}
     const n = Number(amount)
     if (!amount || isNaN(n) || n <= 0) e.amount = 'Enter a valid amount greater than 0'
+    else if (calcMode === 'percent' && n > 100) e.amount = 'A percentage cannot exceed 100%'
+    else if (calcMode === 'fixed' && n > 10_000_000) e.amount = 'Amount is unreasonably large — check the figure'
     if (!reason.trim()) e.reason = 'Reason is required'
     setErrors(e)
     return Object.keys(e).length === 0

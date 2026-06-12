@@ -5,6 +5,7 @@ import { Plus, Eye, Trash2, Receipt, ChevronRight, Download } from 'lucide-react
 import { PageHeader, DataTable, Modal, Confirm, Spinner, Field, exportToExcel } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { fmtDate, todayISO } from '../../lib/utils'
+import { playErrorSound } from '../../lib/sounds'
 
 const STATUS_COLORS = { draft:'badge-gray', sent:'badge-blue', paid:'badge-green', cancelled:'badge-red' }
 
@@ -99,7 +100,7 @@ export default function InvoicesPage() {
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Invoice" size="xl"
         footer={<>
           <button className="btn-secondary btn" onClick={() => setShowCreate(false)}>Cancel</button>
-          <button className="btn-primary btn" onClick={handleSubmit(onSubmit)} disabled={saving}>{saving ? 'Creating…' : 'Create Invoice'}</button>
+          <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)} disabled={saving}>{saving ? 'Creating…' : 'Create Invoice'}</button>
         </>}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">

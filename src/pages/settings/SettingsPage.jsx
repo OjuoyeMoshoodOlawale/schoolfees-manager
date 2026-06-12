@@ -9,6 +9,7 @@ import RegNumberTab from './RegNumberTab'
 import AccountingTab from './AccountingTab'
 import PayrollTab from './PayrollTab'
 import InventoryTab from './InventoryTab'
+import { playErrorSound } from '../../lib/sounds'
 
 const TABS = [
   { id: 'school',       label: 'School Info',   icon: Building2 },
@@ -131,7 +132,7 @@ export default function SettingsPage() {
         title="Settings"
         subtitle="Configure your school, currency, receipt layout, SMS and email."
         actions={
-          <button className="btn-primary btn" onClick={handleSubmit(onSubmit)} disabled={saving}>
+          <button className="btn-primary btn" onClick={handleSubmit(onSubmit, playErrorSound)} disabled={saving}>
             <Save size={15} /> {saving ? 'Saving…' : 'Save Settings'}
           </button>
         }
@@ -148,7 +149,7 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <form onSubmit={handleSubmit(onSubmit, playErrorSound)} className="space-y-5">
 
         {/* ── School Info ── */}
         {tab === 'school' && (
