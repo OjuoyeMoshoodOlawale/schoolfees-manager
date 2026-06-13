@@ -99,10 +99,34 @@ function main() {
   if (DB_PATH !== ':memory:') {
     const dir = path.dirname(DB_PATH)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+    // node-sqlite3-wasm locks via a "<db>.lock" DIRECTORY. If a previous run
+    // (or a crash) left one behind, every open fails with "database is locked".
+    // Remove a stale lock before opening. (If the app itself is running and
+    // holding the DB, the open below will still fail — see the hint there.)
+    const lockDir = DB_PATH + '.lock'
+    if (fs.existsSync(lockDir)) {
+      try { fs.rmSync(lockDir, { recursive: true, force: true }) }
+      catch { /* ignore — handled by the open error below */ }
+    }
     console.log(`Seeding database at: ${DB_PATH}`)
   }
-  const db = new Database(DB_PATH)
-  db.exec('PRAGMA foreign_keys = OFF')
+  let db
+  try {
+    db = new Database(DB_PATH)
+    db.exec('PRAGMA foreign_keys = OFF')
+    // Probe write access immediately so a held lock surfaces here, clearly
+    db.exec('PRAGMA user_version')
+  } catch (e) {
+    if (/locked|busy/i.test(e.message)) {
+      console.error('\n❌ The database is locked.')
+      console.error('   This usually means the SchoolFees Manager app is currently OPEN.')
+      console.error('   Close the app completely, then run this command again.\n')
+      console.error(`   (If the app is closed, delete this folder and retry: ${DB_PATH}.lock)\n`)
+      process.exit(1)
+    }
+    throw e
+  }
 
   // If the target DB is empty (no schema yet), create the tables the seed
   // touches. The real app DB already has these — this only fires on a fresh DB.
