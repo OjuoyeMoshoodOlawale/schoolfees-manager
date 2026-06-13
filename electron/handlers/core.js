@@ -396,6 +396,15 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
   const insert = db.prepare(`INSERT OR IGNORE INTO student_status
     (student_id, session_id, term_id, class_id, status, is_new_student)
     VALUES (?,?,?,?,'active',0)`)
+
+  // IDEMPOTENT: don't re-bill students already in the target term, and report
+  // the true number actually promoted.
+  const alreadyThere = new Set(
+    db.prepare('SELECT student_id FROM student_status WHERE term_id=?').all([new_term_id])
+      .map(r => r.student_id)
+  )
+  const newlyAdded = studentIds.filter(id => !alreadyThere.has(id))
+
   db.exec('BEGIN')
   try {
     for (const sid of studentIds) insert.run([sid, new_session_id, new_term_id, new_class_id])
@@ -406,10 +415,10 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
 
-  // Auto-generate bills for promoted students in new term
+  // Auto-generate bills only for students newly added to the term
   const autoRecalc = getAutoRecalc()
   if (autoRecalc) {
-    for (const sid of studentIds) {
+    for (const sid of newlyAdded) {
       try {
         db.exec('BEGIN')
         autoRecalc(db, sid, new_term_id)
@@ -417,7 +426,7 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
       } catch(e) { try { db.exec('ROLLBACK') } catch {} }
     }
   }
-  return { ok: true, count: studentIds.length }
+  return { ok: true, count: newlyAdded.length, alreadyThere: alreadyThere.size }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -536,13 +545,23 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
 
   const active = db.prepare('SELECT * FROM student_status WHERE term_id=? AND status=?')
     .all([fromTermId, 'active'])
+
+  // IDEMPOTENT: only act on students who are NOT already in the destination
+  // term. Students already there keep their existing class/status untouched,
+  // and re-running moves nobody and re-bills nobody.
+  const alreadyThere = new Set(
+    db.prepare('SELECT student_id FROM student_status WHERE term_id=?').all([toTermId])
+      .map(r => r.student_id)
+  )
+  const toMove = active.filter(s => !alreadyThere.has(s.student_id))
+
   const insert = db.prepare(`INSERT OR IGNORE INTO student_status
     (student_id, session_id, term_id, class_id, status, is_new_student)
     VALUES (?,?,?,?,'active',0)`)
   db.exec('BEGIN')
   try {
-    for (const s of active) insert.run([s.student_id, toSessionId, toTermId, s.class_id])
-    const studentIds = active.map(s => s.student_id)
+    for (const s of toMove) insert.run([s.student_id, toSessionId, toTermId, s.class_id])
+    const studentIds = toMove.map(s => s.student_id)
     if (studentIds.length > 0) {
       db.prepare(`UPDATE students SET entry_type='returning' WHERE id IN (${studentIds.map(()=>'?').join(',')}) AND entry_type='new'`)
         .run(studentIds)
@@ -550,10 +569,10 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
     db.exec('COMMIT')
   } catch(e) { db.exec('ROLLBACK'); throw e }
 
-  // Auto-generate bills for all students in new term
+  // Auto-generate bills only for the students we just moved in
   const autoRecalc = getAutoRecalc()
   if (autoRecalc) {
-    for (const s of active) {
+    for (const s of toMove) {
       try {
         db.exec('BEGIN')
         autoRecalc(db, s.student_id, toTermId)
@@ -561,7 +580,7 @@ ipcMain.handle('students:change-term', (_, { fromTermId, toTermId, toSessionId }
       } catch(e) { try { db.exec('ROLLBACK') } catch {} }
     }
   }
-  return { ok: true, count: active.length }
+  return { ok: true, count: toMove.length, alreadyThere: alreadyThere.size }
 })
 
 

@@ -152,8 +152,10 @@ function main() {
         CREATE TABLE sms_log (id INTEGER PRIMARY KEY AUTOINCREMENT);
         CREATE TABLE email_log (id INTEGER PRIMARY KEY AUTOINCREMENT);
         CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT);
-        CREATE TABLE journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT);
-        CREATE TABLE journal_lines (id INTEGER PRIMARY KEY AUTOINCREMENT);
+        CREATE TABLE journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, reference TEXT UNIQUE, description TEXT, entry_date TEXT, entry_type TEXT DEFAULT 'manual', posted_by TEXT DEFAULT 'admin', created_at TEXT DEFAULT (datetime('now')));
+        CREATE TABLE journal_lines (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER, account_id INTEGER, debit REAL DEFAULT 0, credit REAL DEFAULT 0, narration TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT, type TEXT, account_group TEXT DEFAULT '', balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+        CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE attendance_records (id INTEGER PRIMARY KEY AUTOINCREMENT);
         CREATE TABLE staff_attendance (id INTEGER PRIMARY KEY AUTOINCREMENT);
       `)
@@ -172,6 +174,8 @@ function main() {
     try { db.exec(`DELETE FROM ${t}`) } catch {}
     try { db.exec(`DELETE FROM sqlite_sequence WHERE name='${t}'`) } catch {}
   }
+  // Reset running account balances so re-seeding doesn't double-count
+  try { db.exec('UPDATE accounts SET balance=0') } catch {}
   db.exec('COMMIT')
 
   db.exec('BEGIN')
@@ -332,6 +336,94 @@ function main() {
     }
   }
 
+  // ── Accounting demo data ─────────────────────────────────────────────────
+  // Enable the accounting module and post double-entry journals so the
+  // trial balance, ledger, and income statement are populated (not zero).
+  db.prepare("INSERT OR REPLACE INTO app_state (key,value) VALUES ('accounting_enabled','1')").run()
+
+  // Ensure the chart of accounts exists (the real app seeds this; a bootstrapped
+  // demo DB may not have it yet).
+  const CHART = [
+    ['1001', 'Cash on Hand',       'asset',     'Current Assets'],
+    ['1002', 'Bank Account',       'asset',     'Current Assets'],
+    ['1003', 'Petty Cash',         'asset',     'Current Assets'],
+    ['1100', 'Accounts Receivable','asset',     'Current Assets'],
+    ['4001', 'School Fees Income', 'income',    'Revenue'],
+    ['4002', 'Registration Income','income',    'Revenue'],
+    ['5001', 'Staff Salaries',     'expense',   'Operating Expenses'],
+    ['5002', 'Utilities',          'expense',   'Operating Expenses'],
+    ['5003', 'Maintenance',        'expense',   'Operating Expenses'],
+    ['5004', 'Stationery',         'expense',   'Operating Expenses'],
+    ['2001', 'Accounts Payable',   'liability', 'Current Liabilities'],
+    ['3001', 'Retained Earnings',  'equity',    'Equity'],
+  ]
+  const insAcct = db.prepare('INSERT OR IGNORE INTO accounts (code,name,type,account_group) VALUES (?,?,?,?)')
+  for (const [code, name, type, grp] of CHART) insAcct.run([code, name, type, grp])
+  const acctId = code => db.prepare('SELECT id FROM accounts WHERE code=?').get([code])?.id
+  const bankId = acctId('1002'), feeId = acctId('4001')
+
+  // Map each payment method to a debit (cash) account
+  const methodAccount = { cash: acctId('1001'), pos: bankId, transfer: bankId, cheque: bankId }
+
+  const insEntry = db.prepare(`INSERT OR IGNORE INTO journal_entries
+    (reference, description, entry_date, entry_type, posted_by) VALUES (?,?,?,'payment','demo')`)
+  const insLine  = db.prepare('INSERT INTO journal_lines (entry_id, account_id, debit, credit, narration) VALUES (?,?,?,?,?)')
+
+  // One balanced entry per non-reversed positive payment:
+  //   Dr Cash/Bank   (money received)      Cr School Fees Income
+  const pays = db.prepare(`SELECT id, receipt_number, amount_paid, payment_date, payment_method
+    FROM payments WHERE is_reversed=0 AND amount_paid>0`).all()
+  let jeCount = 0
+  for (const p of pays) {
+    const ref = `AUTO-PMT-${p.receipt_number}`
+    const info = insEntry.run([ref, `Payment received: ${p.receipt_number}`, p.payment_date])
+    if (!info.changes) continue
+    const dr = methodAccount[p.payment_method] || bankId
+    insLine.run([info.lastInsertRowid, dr,    p.amount_paid, 0, 'Fee payment'])
+    insLine.run([info.lastInsertRowid, feeId, 0, p.amount_paid, 'School fees income'])
+    db.prepare('UPDATE accounts SET balance=balance+? WHERE id=?').run([p.amount_paid, dr])
+    db.prepare('UPDATE accounts SET balance=balance+? WHERE id=?').run([p.amount_paid, feeId])
+    jeCount++
+  }
+
+  // Reversal entries: Dr School Fees Income, Cr Cash/Bank (contra)
+  const revs = db.prepare(`SELECT id, receipt_number, amount_paid, payment_date, payment_method
+    FROM payments WHERE amount_paid<0`).all()
+  for (const r of revs) {
+    const amt = Math.abs(r.amount_paid)
+    const ref = `AUTO-REV-${r.receipt_number}`
+    const info = insEntry.run([ref, `Payment reversed: ${r.receipt_number}`, r.payment_date])
+    if (!info.changes) continue
+    const cr = methodAccount[r.payment_method] || bankId
+    insLine.run([info.lastInsertRowid, feeId, amt, 0, 'Reversal of fees income'])
+    insLine.run([info.lastInsertRowid, cr,    0, amt, 'Reversal contra'])
+    db.prepare('UPDATE accounts SET balance=balance-? WHERE id=?').run([amt, feeId])
+    db.prepare('UPDATE accounts SET balance=balance-? WHERE id=?').run([amt, cr])
+    jeCount++
+  }
+
+  // A handful of operating expenses: Dr Expense, Cr Bank
+  const EXP = [
+    ['5001', 850000, 'Monthly staff salaries'],
+    ['5002', 120000, 'Electricity & water'],
+    ['5003', 65000,  'Generator servicing'],
+    ['5004', 38000,  'Exam stationery'],
+  ]
+  let expSeq = 1
+  for (const [code, amt, desc] of EXP) {
+    const exId = acctId(code); if (!exId) continue
+    const ref = `JE-EXP-DEMO-${String(expSeq++).padStart(3, '0')}`
+    const info = insEntry.run([ref, `Expense: ${desc}`, new Date().toISOString().slice(0, 10)])
+    if (!info.changes) continue
+    insLine.run([info.lastInsertRowid, exId,   amt, 0, desc])
+    insLine.run([info.lastInsertRowid, bankId, 0, amt, 'Paid from bank'])
+    db.prepare('UPDATE accounts SET balance=balance+? WHERE id=?').run([amt, exId])
+    db.prepare('UPDATE accounts SET balance=balance-? WHERE id=?').run([amt, bankId])
+    jeCount++
+  }
+  // Reclassify entry_type for the expense rows so reports group them correctly
+  db.prepare("UPDATE journal_entries SET entry_type='expense' WHERE reference LIKE 'JE-EXP-DEMO-%'").run()
+
   db.exec('COMMIT')
 
   // ── Stats ────────────────────────────────────────────────────────────────────
@@ -350,6 +442,8 @@ function main() {
   console.log('   Payments     :', payCount, `(of which ${reversedCount} reversed)`)
   console.log('   Adjustments  :', stat('SELECT COUNT(*) n FROM bill_adjustments'))
   console.log('   Carryovers   :', stat('SELECT COUNT(*) n FROM previous_term_balance'))
+  console.log('   Journal entries:', stat('SELECT COUNT(*) n FROM journal_entries'), `(${jeCount} posted)`)
+  console.log('   Accounts used:', stat('SELECT COUNT(DISTINCT account_id) n FROM journal_lines'))
   console.log('   Total billed :', '₦' + totalBilled.toLocaleString('en-NG'))
   console.log('   Total paid   :', '₦' + totalPaid.toLocaleString('en-NG'))
   console.log('   Collection % :', totalBilled ? Math.round(totalPaid / totalBilled * 100) + '%' : '0%')

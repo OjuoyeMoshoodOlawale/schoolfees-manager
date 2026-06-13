@@ -75,8 +75,8 @@ safeHandle('payments:post', (_, data) => {
       // ── Auto-journal entry if accounting is enabled (inside transaction) ────
       const acctEnabled = db.prepare("SELECT value FROM app_state WHERE key='accounting_enabled'").get()?.value
       if (acctEnabled === '1') {
-        const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1010' AND is_active=1").get()
-        const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4000' AND is_active=1").get()
+        const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1002' AND is_active=1").get()
+        const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4001' AND is_active=1").get()
         if (bankAcc && feeAcc) {
           const ref = `AUTO-PMT-${finalReceipt}`
           const entryId = db.prepare(`INSERT INTO journal_entries (reference, description, entry_date, entry_type, posted_by)
@@ -331,8 +331,8 @@ safeHandle('payments:reverse', (_, { payment_id, reason, reversed_by }) => {
     try {
       const acctEnabled = db.prepare("SELECT value FROM app_state WHERE key='accounting_enabled'").get()?.value
       if (acctEnabled === '1') {
-        const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1010' AND is_active=1").get()
-        const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4000' AND is_active=1").get()
+        const bankAcc = db.prepare("SELECT id FROM accounts WHERE code='1002' AND is_active=1").get()
+        const feeAcc  = db.prepare("SELECT id FROM accounts WHERE code='4001' AND is_active=1").get()
         if (bankAcc && feeAcc) {
           const amt = Math.abs(payment.amount_paid)
           const ref = `AUTO-REV-${reversal_receipt}`
