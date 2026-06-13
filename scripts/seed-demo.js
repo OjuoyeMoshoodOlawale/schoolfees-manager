@@ -29,14 +29,36 @@ const path = require('path')
 const fs   = require('fs')
 
 // ── Resolve DB path ───────────────────────────────────────────────────────────
+// Mirrors electron/main.js exactly:
+//   Dev:        <project>/database/schoolfees.db
+//   Production: <userData>/SchoolFees Manager/data/schoolfees.db
 function resolveDbPath() {
   const argIdx = process.argv.indexOf('--db')
   if (argIdx !== -1 && process.argv[argIdx + 1]) return process.argv[argIdx + 1]
-  // Default: same location the Electron app uses
-  const appData = process.env.APPDATA
-    || (process.env.HOME && path.join(process.env.HOME, '.config'))
-    || process.cwd()
-  return path.join(appData, 'schoolfees-manager', 'schoolfees.db')
+
+  // 1. Dev location next to this project (this is where `npm start` keeps it in dev)
+  const devPath = path.join(__dirname, '..', 'database', 'schoolfees.db')
+  if (fs.existsSync(devPath)) return devPath
+
+  // 2. Production location used by the packaged app. Electron's userData folder
+  //    is named after "productName" when packaged, but after "name" when run
+  //    unpacked — so check both.
+  const base =
+    process.platform === 'win32'
+      ? (process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming'))
+      : process.platform === 'darwin'
+        ? path.join(process.env.HOME || '', 'Library', 'Application Support')
+        : (process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config'))
+  for (const folder of ['SchoolFees Manager', 'schoolfees']) {
+    for (const sub of ['data', '']) {
+      const p = path.join(base, folder, sub, 'schoolfees.db')
+      if (fs.existsSync(p)) return p
+    }
+  }
+
+  // 3. Neither exists yet → default to the dev path and create it there.
+  //    (The seeder bootstraps the schema when the DB is empty.)
+  return devPath
 }
 const DRY = process.argv.includes('--dry')
 const DB_PATH = DRY ? ':memory:' : resolveDbPath()
@@ -73,6 +95,12 @@ const randInt = (a, b) => a + Math.floor(rng() * (b - a + 1))
 const pad = (n, w) => String(n).padStart(w, '0')
 
 function main() {
+  // Make sure the target directory exists (first-run dev path may not yet)
+  if (DB_PATH !== ':memory:') {
+    const dir = path.dirname(DB_PATH)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    console.log(`Seeding database at: ${DB_PATH}`)
+  }
   const db = new Database(DB_PATH)
   db.exec('PRAGMA foreign_keys = OFF')
 
