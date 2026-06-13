@@ -32,6 +32,8 @@ export default function PromotePage() {
   const [destTerm, setDestTerm]     = useState('')
   const [destTerms, setDestTerms]   = useState([])
   const [currentTerm, setCurrentTerm] = useState(null)
+  const [carryInfo, setCarryInfo] = useState(null)   // { missing, source_label }
+  const [carrying, setCarrying]   = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -41,7 +43,13 @@ export default function PromotePage() {
       ])
       setSessions(sess)
       setClasses(cls.filter(c => c.is_active))
-      try { setCurrentTerm(await window.api.getCurrentTerm()) } catch {}
+      try {
+        const ct = await window.api.getCurrentTerm()
+        setCurrentTerm(ct)
+        if (ct?.id) {
+          try { setCarryInfo(await window.api.carryForwardPreview({ to_term_id: ct.id })) } catch {}
+        }
+      } catch {}
       setLoading(false)
     }
     load()
@@ -174,6 +182,38 @@ export default function PromotePage() {
         title="Promote / Change Term"
         subtitle="Move students to a new class or term. Inserts new student status records."
       />
+
+      {/* Carry-forward notice: un-promoted students missing from current term */}
+      {carryInfo?.missing > 0 && (
+        <div className="mb-5 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
+          <Users size={18} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-blue-800">
+              {carryInfo.missing} student{carryInfo.missing !== 1 ? 's are' : ' is'} not yet in {currentTerm?.name}, {currentTerm?.session_name}
+            </p>
+            <p className="text-xs text-blue-600 mt-0.5">
+              These weren't promoted from {carryInfo.source_label}. Bring them into this term in the <span className="font-medium">same class</span> they were in — you can move any of them individually afterward.
+            </p>
+          </div>
+          <button
+            className="btn btn-sm btn-primary flex-shrink-0"
+            disabled={carrying}
+            onClick={async () => {
+              setCarrying(true)
+              try {
+                const r = await window.api.carryForward({ to_term_id: currentTerm.id })
+                if (r.ok) {
+                  toast.success(`${r.carried} student${r.carried !== 1 ? 's' : ''} brought into ${currentTerm.name} (same class)`)
+                  setCarryInfo(await window.api.carryForwardPreview({ to_term_id: currentTerm.id }))
+                } else toast.error(r.error || 'Carry-forward failed')
+              } catch (e) { toast.error(e.message) }
+              finally { setCarrying(false) }
+            }}
+          >
+            {carrying ? 'Working…' : `Carry ${carryInfo.missing} forward`}
+          </button>
+        </div>
+      )}
 
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-6 w-fit">

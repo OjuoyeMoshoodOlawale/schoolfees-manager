@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('api', {
   getStudentStatus:   (id)   => invoke('status:for-student', id),
   updateStudentStatus:(d)    => invoke('status:update', d),
   promoteStudents:    (d)    => invoke('students:promote', d),
+  carryForward:        (d)    => invoke('students:carry-forward', d),
+  carryForwardPreview: (d)    => invoke('students:carry-forward-preview', d),
   changeTerm:         (d)    => invoke('students:change-term', d),
 
   // ── Fee Items

@@ -45,6 +45,40 @@ ipcMain.handle('sessions:set-current', (_, sessionId, termId) => {
   db.prepare('UPDATE terms SET is_current=1 WHERE id=?').run(termId)
   db.exec('COMMIT')
 
+  // If the term we're switching into has NO students yet, carry everyone
+  // forward from the most recent earlier term into the SAME class. This makes
+  // simply advancing the term "just work" — un-promoted students don't vanish.
+  // Idempotent: if the term already has students, nothing is copied.
+  const hasStudents = db.prepare(
+    "SELECT COUNT(*) c FROM student_status WHERE term_id=? AND status='active'").get([termId]).c
+  if (hasStudents === 0) {
+    try {
+      const { compareTerms } = require('../lib/termOrder')
+      const candidates = db.prepare('SELECT DISTINCT term_id FROM student_status WHERE term_id != ?').all([termId])
+      let best = null
+      for (const { term_id } of candidates) {
+        if (compareTerms(db, term_id, termId) < 0) {
+          if (best === null || compareTerms(db, term_id, best) > 0) best = term_id
+        }
+      }
+      if (best !== null) {
+        const toMove = db.prepare(`
+          SELECT student_id, class_id FROM student_status ss
+          WHERE ss.term_id=? AND ss.status='active'
+            AND NOT EXISTS (SELECT 1 FROM student_status x WHERE x.student_id=ss.student_id AND x.term_id=?)`)
+          .all([best, termId])
+        const ins = db.prepare(`INSERT OR IGNORE INTO student_status
+          (student_id, session_id, term_id, class_id, status, is_new_student) VALUES (?,?,?,?,'active',0)`)
+        db.exec('BEGIN')
+        try {
+          for (const s of toMove) ins.run([s.student_id, sessionId, termId, s.class_id])
+          db.exec('COMMIT')
+        } catch { try { db.exec('ROLLBACK') } catch {} }
+        console.log(`[carry-forward] Carried ${toMove.length} students into term ${termId} (same class) from term ${best}`)
+      }
+    } catch (e) { console.warn('[carry-forward] skipped:', e.message) }
+  }
+
   // Auto-generate bills for every active student in the new current term.
   // Runs in background — any individual failure is non-fatal.
   const autoRecalc = getAutoRecalc()
@@ -384,6 +418,110 @@ ipcMain.handle('students:promote', (_, { studentIds, new_term_id, new_session_id
     }
   }
   return { ok: true, count: studentIds.length }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARRY FORWARD — bring un-promoted students into a term in their SAME class.
+//
+// Problem this solves: a student only appears in a term if they have a
+// student_status row for it. If you promote only some students, everyone else
+// has no row in the new term — they'd silently disappear from lists and bills.
+//
+// This copies every active student who exists in `from_term_id` but is missing
+// from `to_term_id` into the SAME class they were in. Each carried student can
+// still be moved to a different class afterward (Promote/Move screens).
+//
+// IDEMPOTENT: thanks to UNIQUE(student_id, term_id) + INSERT OR IGNORE, running
+// it again does nothing for students already in the target term — it neither
+// duplicates rows nor overwrites a class you manually changed.
+// ─────────────────────────────────────────────────────────────────────────────
+ipcMain.handle('students:carry-forward', (_, { from_term_id, to_term_id, to_session_id } = {}) => {
+  const db = getDb()
+
+  const toTerm = db.prepare('SELECT * FROM terms WHERE id=?').get([to_term_id])
+  if (!toTerm) throw new Error('Destination term not found')
+  const toSession = to_session_id || toTerm.session_id
+
+  // Resolve the source term: explicit, else the latest term BEFORE the target
+  // that actually has students (so it works whether you came from last term or
+  // last session).
+  let sourceTermId = from_term_id
+  if (!sourceTermId) {
+    const { compareTerms } = require('../lib/termOrder')
+    const candidates = db.prepare(`
+      SELECT DISTINCT term_id FROM student_status WHERE term_id != ?`).all([to_term_id])
+    let best = null
+    for (const { term_id } of candidates) {
+      if (compareTerms(db, term_id, to_term_id) < 0) {            // strictly earlier
+        if (best === null || compareTerms(db, term_id, best) > 0) best = term_id
+      }
+    }
+    sourceTermId = best
+  }
+  if (!sourceTermId) return { ok: true, carried: 0, alreadyThere: 0, message: 'No earlier term to carry students from.' }
+
+  // Students active in the source term who are NOT yet in the target term
+  const toMove = db.prepare(`
+    SELECT ss.student_id, ss.class_id
+    FROM student_status ss
+    WHERE ss.term_id = ? AND ss.status = 'active'
+      AND NOT EXISTS (
+        SELECT 1 FROM student_status x WHERE x.student_id = ss.student_id AND x.term_id = ?
+      )`).all([sourceTermId, to_term_id])
+
+  const alreadyThere = db.prepare(
+    "SELECT COUNT(*) c FROM student_status WHERE term_id=? AND status='active'").get([to_term_id]).c
+
+  if (!toMove.length) {
+    return { ok: true, carried: 0, alreadyThere, source_term_id: sourceTermId,
+      message: 'Everyone is already in this term.' }
+  }
+
+  const insert = db.prepare(`INSERT OR IGNORE INTO student_status
+    (student_id, session_id, term_id, class_id, status, is_new_student)
+    VALUES (?,?,?,?,'active',0)`)
+
+  let carried = 0
+  db.exec('BEGIN')
+  try {
+    for (const s of toMove) {
+      const r = insert.run([s.student_id, toSession, to_term_id, s.class_id])
+      if (r.changes > 0) carried++
+    }
+    db.exec('COMMIT')
+  } catch (e) { db.exec('ROLLBACK'); throw e }
+
+  // Auto-generate bills for the carried students in the new term
+  const autoRecalc = getAutoRecalc()
+  if (autoRecalc) {
+    for (const s of toMove) {
+      try { db.exec('BEGIN'); autoRecalc(db, s.student_id, to_term_id); db.exec('COMMIT') }
+      catch { try { db.exec('ROLLBACK') } catch {} }
+    }
+  }
+
+  return { ok: true, carried, alreadyThere, source_term_id: sourceTermId }
+})
+
+// Preview how many students would be carried forward (no writes)
+ipcMain.handle('students:carry-forward-preview', (_, { to_term_id } = {}) => {
+  const db = getDb()
+  const { compareTerms } = require('../lib/termOrder')
+  const candidates = db.prepare('SELECT DISTINCT term_id FROM student_status WHERE term_id != ?').all([to_term_id])
+  let best = null
+  for (const { term_id } of candidates) {
+    if (compareTerms(db, term_id, to_term_id) < 0) {
+      if (best === null || compareTerms(db, term_id, best) > 0) best = term_id
+    }
+  }
+  if (!best) return { missing: 0, source_term_id: null }
+  const missing = db.prepare(`
+    SELECT COUNT(*) c FROM student_status ss
+    WHERE ss.term_id=? AND ss.status='active'
+      AND NOT EXISTS (SELECT 1 FROM student_status x WHERE x.student_id=ss.student_id AND x.term_id=?)`)
+    .get([best, to_term_id]).c
+  const srcTerm = db.prepare('SELECT t.name, s.name session FROM terms t JOIN sessions s ON s.id=t.session_id WHERE t.id=?').get([best])
+  return { missing, source_term_id: best, source_label: srcTerm ? `${srcTerm.name}, ${srcTerm.session}` : '' }
 })
 
 // Change term (same class, active students)
