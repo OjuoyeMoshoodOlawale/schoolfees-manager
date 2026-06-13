@@ -259,11 +259,16 @@ module.exports = function registerBackupHandlers() {
 
   ipcMain.handle('backup:pick-sync-folder', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Choose Google Drive Sync Folder',
+      title: 'Choose Backup Folder',
       message: 'Select your Google Drive (or OneDrive/Dropbox) folder — encrypted backups will be copied there and synced by your cloud app.',
       properties: ['openDirectory', 'createDirectory']
     })
-    return result.canceled ? null : result.filePaths[0]
+    if (result.canceled || !result.filePaths[0]) return { folder: null, canceled: true }
+    const folder = result.filePaths[0]
+    // Persist immediately so the selection survives even if the renderer
+    // forgets to call set-sync-folder afterwards.
+    try { saveSyncConfig({ ...(loadSyncConfig() || {}), folder, enabled: true }) } catch {}
+    return { folder }
   })
 
   ipcMain.handle('backup:sync-now', async () => {

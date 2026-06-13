@@ -40,8 +40,10 @@ export default function BackupPage() {
   // ── Choose the ONE backup folder ──────────────────────────────────────────
   const handlePickFolder = async () => {
     const r = await window.api.pickSyncFolder()
-    if (r?.folder) {
-      await window.api.setSyncFolder({ folder: r.folder, enabled: true })
+    // The picker may return a plain path string or { folder }
+    const folder = typeof r === 'string' ? r : r?.folder
+    if (folder) {
+      await window.api.setSyncFolder({ folder, enabled: true })
       toast.success('Backup folder set!')
       loadAll()
     }
